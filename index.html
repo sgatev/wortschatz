@@ -1,0 +1,1276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wortschatz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Mono:wght@400;500&family=Fira+Sans+Condensed:wght@600;700;800&family=Fira+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow working column; a header with tabs, then one view at a time. The flashcard is the hero. */
+/* Nord palette (nordtheme.com).
+   Polar Night  nord0 #2E3440  nord1 #3B4252  nord2 #434C5E  nord3 #4C566A
+   Snow Storm   nord4 #D8DEE9  nord5 #E5E9F0  nord6 #ECEFF4
+   Frost        nord7 #8FBCBB  nord8 #88C0D0  nord9 #81A1C1  nord10 #5E81AC
+   Aurora       nord11 #BF616A  nord12 #D08770  nord13 #EBCB8B  nord14 #A3BE8C  nord15 #B48EAD
+   Where an Aurora/Frost colour carries text and is too pale (or too dark) to read on its
+   background, a deeper or lighter shade of the same hue is used instead. */
+:root{
+  --bg:#E5E9F0; --surface:#ECEFF4; --sunk:#D8DEE9; --ink:#2E3440; --muted:#4C566A; --line:#D8DEE9;
+  --accent:#88C0D0; --accent-ink:#2E3440; --accent-soft:#D2E5EB; --focus:#5E81AC;
+  --der:#4C6E95; --die:#A8505A; --das:#4F6B3B;
+  --ok:#4F6B3B; --miss:#A8505A;
+  --ok-fill:#A3BE8C; --miss-fill:#BF616A; --on-fill:#2E3440;
+  --shadow:46,52,64;
+  --f-display:"Fira Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Fira Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"Fira Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#2E3440; --surface:#3B4252; --sunk:#434C5E; --ink:#ECEFF4; --muted:#A3ADC0; --line:#4C566A;
+  --accent:#88C0D0; --accent-ink:#2E3440; --accent-soft:#3E5260; --focus:#88C0D0;
+  --der:#81A1C1; --die:#D88C94; --das:#A3BE8C; --ok:#A3BE8C; --miss:#D88C94;
+  --ok-fill:#A3BE8C; --miss-fill:#BF616A; --on-fill:#2E3440;
+  --shadow:20,24,31; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#2E3440; --surface:#3B4252; --sunk:#434C5E; --ink:#ECEFF4; --muted:#A3ADC0; --line:#4C566A;
+  --accent:#88C0D0; --accent-ink:#2E3440; --accent-soft:#3E5260; --focus:#88C0D0;
+  --der:#81A1C1; --die:#D88C94; --das:#A3BE8C; --ok:#A3BE8C; --miss:#D88C94;
+  --ok-fill:#A3BE8C; --miss-fill:#BF616A; --on-fill:#2E3440;
+  --shadow:20,24,31; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+[hidden]{display:none!important}
+code{font-family:var(--f-mono);font-size:.88em}
+.app{max-width:760px;margin:0 auto;padding:0 16px;padding-block:20px 64px;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:.005em}
+h2{font-size:1.5rem;font-weight:700}
+h3{font-size:1.1rem;font-weight:700}
+p{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.muted{color:var(--muted)}
+.label{font-family:var(--f-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}
+.brand{display:flex;align-items:center;gap:12px}
+.mark{width:40px;height:40px;border-radius:9px;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-family:var(--f-display);font-weight:800;font-size:1.35rem}
+.brand h1{font-size:1.7rem;font-weight:800;line-height:1}
+.brand p{font-size:.85rem;color:var(--muted)}
+.tabs{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:10px}
+.tab{border:0;background:transparent;padding:7px 14px;border-radius:7px;cursor:pointer;font-weight:500;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(var(--shadow),.08)}
+.tab .count{font-family:var(--f-mono);font-size:.75rem;margin-left:4px;color:var(--muted)}
+
+.notice{background:var(--accent-soft);border:1px solid var(--line);padding:10px 14px;border-radius:10px;font-size:.9rem}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.stack{display:flex;flex-direction:column;gap:16px}
+
+/* buttons */
+.btn{border:1px solid var(--line);background:var(--surface);padding:9px 16px;border-radius:9px;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(1.04)}
+.btn.small{padding:5px 10px;font-size:.85rem}
+.btn.link{border:0;background:none;padding:4px 6px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.kbd{font-family:var(--f-mono);font-size:.7rem;border:1px solid currentColor;border-radius:4px;padding:0 4px;opacity:.6}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+
+/* segmented controls */
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.opt{display:flex;flex-direction:column;gap:6px}
+.seg{display:flex;background:var(--sunk);border-radius:9px;padding:3px}
+.seg button{flex:1;border:0;background:transparent;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:.88rem;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(var(--shadow),.08)}
+
+/* practice summary */
+.due{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.due .big{font-family:var(--f-display);font-size:3rem;font-weight:800;line-height:1}
+
+/* flashcard */
+.progress{height:6px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);transition:width .25s}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 0 var(--line),0 10px 30px -18px rgba(var(--shadow),.35);padding:22px 22px 26px;display:flex;flex-direction:column;gap:18px;min-height:280px}
+.card-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.prompt{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:6px;min-width:0}
+.word{font-family:var(--f-display);font-weight:700;font-size:clamp(2rem,8vw,3.4rem);line-height:1.08;overflow-wrap:anywhere}
+.answer{border-top:1px dashed var(--line);padding-top:16px;text-align:center;display:flex;flex-direction:column;gap:4px;animation:rise .2s ease-out}
+.answer .word{font-size:clamp(1.6rem,6vw,2.4rem)}
+.extra{color:var(--muted);font-size:.92rem}
+.verdict{font-weight:600;font-size:.95rem}
+.verdict.ok{color:var(--ok)} .verdict.miss{color:var(--miss)}
+@keyframes rise{from{opacity:.2;transform:translateY(4px)}to{opacity:1;transform:none}}
+.again-tag{font-family:var(--f-mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;background:var(--accent-soft);padding:2px 8px;border-radius:99px}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions .btn{padding:13px 10px;font-size:1rem}
+.btn.miss{border-color:var(--miss);color:var(--miss)}
+.btn.ok{border-color:var(--ok);color:var(--ok)}
+.typebox{display:flex;flex-direction:column;gap:8px}
+.typebox input{width:100%;padding:12px 14px;font-size:1.15rem;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:center}
+.umlauts{display:flex;gap:6px;justify-content:center}
+.plrow{display:flex;align-items:center;gap:10px}
+.cjgrid{display:flex;flex-direction:column;gap:8px;width:100%;max-width:440px;margin:0 auto}
+.cjrow{display:grid;grid-template-columns:5.5em 1fr;gap:4px 12px;align-items:center}
+.cjrow label{font-family:var(--f-mono);font-size:.85rem;color:var(--muted);text-align:right}
+.cjrow input{width:100%;min-width:0;padding:8px 12px;font-size:1.05rem;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+.cjrow input:disabled{opacity:1;color:var(--ink)}
+.cjrow.ok input{border-color:var(--ok);box-shadow:inset 3px 0 0 var(--ok)}
+.cjrow.miss input{border-color:var(--miss);box-shadow:inset 3px 0 0 var(--miss);text-decoration:line-through;text-decoration-color:var(--miss)}
+.cjfix{grid-column:2;font-weight:600;color:var(--ok);font-size:.95rem}
+.cjgrid.one{max-width:360px}
+.cjgrid.one .cjrow label{font-family:var(--f-display);font-size:1.35rem;font-weight:700;color:var(--ink)}
+.cjgrid.one .cjrow input{font-size:1.25rem;padding:10px 14px}
+.plrow .art{font-size:1.25rem}
+.plrow input{flex:1;min-width:0}
+.umlauts button{border:1px solid var(--line);background:var(--surface);border-radius:7px;width:38px;height:34px;cursor:pointer;font-size:1rem}
+.hint{font-size:.8rem;color:var(--muted);text-align:center}
+
+/* article chips */
+.art{font-weight:600}
+.art-der{color:var(--der)} .art-die{color:var(--die)} .art-das{color:var(--das)}
+
+/* der / die / das buttons: each wears its gender colour */
+.artbtns{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.artbtn{font-family:var(--f-display);font-weight:700;font-size:1.6rem;padding:14px 8px 12px;border-radius:12px;border:2px solid currentColor;background:var(--surface);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;transition:transform .08s}
+.artbtn .kbd{font-family:var(--f-mono);font-size:.68rem;font-weight:400;color:var(--muted);border-color:var(--line)}
+.artbtn:not([disabled]):hover{transform:translateY(-1px)}
+.artbtn:not([disabled]):active{transform:translateY(1px)}
+.artbtn[disabled]{cursor:default}
+.artbtn.correct{background:var(--ok-fill);border-color:var(--ok-fill);color:var(--on-fill)}
+.artbtn.correct .kbd{color:var(--on-fill);border-color:var(--on-fill)}
+.artbtn.wrong{border-style:dashed;text-decoration:line-through;color:var(--miss)}
+.artbtn.dim{opacity:.35}
+
+/* results */
+.missed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.missed li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+
+/* forms */
+.form{display:grid;grid-template-columns:110px 1fr 1fr;gap:10px}
+.form .full{grid-column:1/-1}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field input,.field select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+textarea{min-height:120px;font-family:var(--f-mono);font-size:.88rem;resize:vertical}
+@media (max-width:560px){.form{grid-template-columns:1fr 1fr}.form .art-field{grid-column:1/-1}}
+details summary{cursor:pointer;font-weight:500}
+details[open] summary{margin-bottom:10px}
+
+/* quick add */
+.quick{display:flex;flex-direction:column;gap:6px}
+.quickrow{display:flex;gap:8px}
+.quickrow input{flex:1;min-width:0;padding:11px 14px;font-size:1.1rem;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.results{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.result{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+.result:last-child{border-bottom:0}
+.result.first{background:var(--accent-soft)}
+.result .rde{font-weight:600;font-size:1.1rem;overflow-wrap:anywhere}
+.result .ren{color:var(--muted);font-size:.92rem;overflow-wrap:anywhere}
+.result .pos{font-family:var(--f-mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-left:6px}
+.result .gloss{font-size:.82rem;color:var(--muted);font-style:italic;margin-top:2px;overflow-wrap:anywhere}
+.results .more{align-self:flex-start;margin:6px 8px}
+.result .ract{display:flex;gap:6px}
+.results .msg{padding:12px 14px;font-size:.92rem}
+
+/* word list */
+.listhead{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center}
+.catfilter{display:flex;flex-wrap:wrap;gap:6px}
+.catfilter button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:4px 11px;font-size:.84rem;cursor:pointer;color:var(--muted)}
+.catfilter button .n{font-family:var(--f-mono);font-size:.74rem;margin-left:5px}
+.catfilter button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.cat{font-family:var(--f-mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:8px;vertical-align:2px;font-weight:400;white-space:nowrap}
+.search{flex:1;min-width:180px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+.words{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.wrow{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.wrow:last-child{border-bottom:0}
+.wmain{min-width:0}
+.wde{font-weight:600;font-size:1.05rem;overflow-wrap:anywhere}
+.wen{color:var(--muted);font-size:.92rem;overflow-wrap:anywhere}
+.pl{font-weight:400;color:var(--muted);font-size:.85rem}
+.wmeta{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.pips{display:flex;gap:3px}
+.pips i{width:8px;height:8px;border-radius:2px;background:var(--sunk);border:1px solid var(--line)}
+.pips i.on{background:var(--accent);border-color:var(--accent)}
+.acc{font-family:var(--f-mono);font-size:.75rem;color:var(--muted)}
+.wact{display:flex;gap:2px}
+.icon{border:0;background:none;padding:6px;border-radius:7px;cursor:pointer;color:var(--muted);display:grid;place-items:center}
+.icon:hover{background:var(--sunk);color:var(--ink)}
+.icon svg{width:16px;height:16px}
+.confirm{display:flex;gap:6px;align-items:center;font-size:.85rem}
+@media (max-width:480px){.wrow{grid-template-columns:1fr auto}.wmeta{display:none}}
+
+/* stats */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+#statsSwitch .seg{max-width:360px}
+@media (max-width:620px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.tile b{font-family:var(--f-display);font-size:2rem;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+.tile span{font-size:.82rem;color:var(--muted)}
+.chartwrap{overflow-x:auto}
+.chartwrap svg{display:block;width:100%;min-width:480px;height:auto}
+.legend{display:flex;gap:16px;font-size:.82rem;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.boxes{display:flex;flex-direction:column;gap:8px}
+.boxrow{display:grid;grid-template-columns:130px 1fr 36px;gap:10px;align-items:center;font-size:.88rem}
+.boxbar{height:12px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.boxbar i{display:block;height:100%;background:var(--accent)}
+.boxrow .n{font-family:var(--f-mono);text-align:right;font-size:.82rem}
+.empty{text-align:center;padding:26px 10px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.empty .word{font-size:2.2rem}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:9px;font-size:.9rem;max-width:calc(100% - 32px);z-index:10}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">W</div>
+      <div><h1>Wortschatz</h1><p>Your German vocabulary trainer</p></div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-practice" data-tab="practice" aria-selected="true">Practice</button>
+      <button class="tab" role="tab" id="tab-words" data-tab="words" aria-selected="false">Words<span class="count num" id="wordCount"></span></button>
+      <button class="tab" role="tab" id="tab-progress" data-tab="progress" aria-selected="false">Progress</button>
+    </nav>
+  </header>
+
+  <div id="notice" class="notice" hidden>Can’t reach the Wortschatz server, so nothing will be saved. Start it with <code>node server.js</code> in the wortschatz folder, then reload this page.</div>
+
+  <!-- PRACTICE -->
+  <section id="view-practice" class="stack">
+    <div id="practiceIdle"></div>
+    <div id="practiceSession" class="stack" hidden></div>
+  </section>
+
+  <!-- WORDS -->
+  <section id="view-words" class="stack" hidden>
+    <div class="panel">
+      <h2>Add a word</h2>
+      <form id="quickForm" class="quick" autocomplete="off">
+        <label class="label" for="qWord">German word</label>
+        <div class="quickrow">
+          <input id="qWord" placeholder="Hund" autocapitalize="off" spellcheck="false">
+          <button class="btn primary" type="submit" id="qBtn">Look up</button>
+        </div>
+        <p class="hint" style="text-align:left">Article, plural and meaning come from Wiktionary. Press Enter again to add the first result.</p>
+      </form>
+      <div id="qResults" class="results" hidden></div>
+
+      <details id="manual">
+        <summary id="formTitle">Enter a word yourself</summary>
+        <form id="wordForm" class="form" autocomplete="off">
+          <div class="field art-field"><label class="label" for="fArt">Article</label>
+            <select id="fArt"><option value="">none</option><option value="der">der</option><option value="die">die</option><option value="das">das</option></select></div>
+          <div class="field"><label class="label" for="fDe">German</label><input id="fDe" placeholder="Hund" required></div>
+          <div class="field"><label class="label" for="fEn">English</label><input id="fEn" placeholder="dog" required></div>
+          <div class="field art-field"><label class="label" for="fCat">Category</label>
+            <select id="fCat"><option value="">—</option></select></div>
+          <div class="field"><label class="label" for="fPl">Plural (optional)</label><input id="fPl" placeholder="die Hunde"></div>
+          <div class="field"><label class="label" for="fNote">Example or note (optional)</label><input id="fNote" placeholder="Der Hund bellt."></div>
+          <div class="row full">
+            <button class="btn primary" type="submit" id="fSubmit">Add word</button>
+            <button class="btn" type="button" id="fCancel" hidden>Cancel</button>
+          </div>
+        </form>
+      </details>
+      <details id="bulk">
+        <summary>Add many at once</summary>
+        <div class="stack">
+          <p class="muted" style="font-size:.9rem">One word per line. A line with just the German word is looked up for you. To give your own meaning, add it after “=”, “-”, “;” or a tab.</p>
+          <textarea id="bulkText" placeholder="Bahnhof&#10;Brücke&#10;laufen = to run"></textarea>
+          <div class="row"><button class="btn" type="button" id="bulkAdd">Add these words</button><span class="muted" id="bulkStatus" style="font-size:.9rem"></span></div>
+        </div>
+      </details>
+    </div>
+    <div class="panel">
+      <div class="listhead">
+        <h2>Your words</h2>
+        <input class="search" id="search" type="search" placeholder="Search German or English">
+      </div>
+      <div class="catfilter" id="catFilter" role="group" aria-label="Filter by category"></div>
+      <ul class="words" id="wordList"></ul>
+    </div>
+  </section>
+
+  <!-- PROGRESS -->
+  <section id="view-progress" class="stack" hidden>
+    <div id="statsSwitch"></div>
+    <div class="tiles" id="tiles"></div>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <h3 id="chartTitle">Reviews, last 30 days</h3>
+        <div class="legend"><span><i style="background:var(--ok-fill)"></i>Right</span><span><i style="background:var(--miss-fill)"></i>Missed</span></div>
+      </div>
+      <div class="chartwrap" id="chart"></div>
+    </div>
+    <div class="panel">
+      <h3>Where your words are</h3>
+      <p class="muted" style="font-size:.9rem" id="boxesNote">Each word climbs a box when you know it and drops back to box 1 when you miss it. Higher boxes come back less often.</p>
+      <div class="boxes" id="boxes"></div>
+    </div>
+    <div class="panel">
+      <h3 id="trickyTitle">Trickiest words</h3>
+      <ul class="missed" id="tricky"></ul>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2,"0");
+const dkey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today = () => dkey(new Date());
+const addDays = (key,n) => { const [y,m,d] = key.split("-").map(Number); return dkey(new Date(y,m-1,d+n)); };
+const INTERVALS = [0,0,1,3,7,16];           // days until next review, by box
+const BOX_NAMES = ["", "Box 1 · every day", "Box 2 · next day", "Box 3 · 3 days", "Box 4 · 1 week", "Box 5 · 16 days"];
+
+/* ---------- preferences (per browser) ---------- */
+const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab", stats:"vocab", tense:"präsens", cjmode:"all" };
+try { Object.assign(prefs, JSON.parse(localStorage.getItem("wz-prefs") || "{}")); } catch(e){}
+const savePrefs = () => { try { localStorage.setItem("wz-prefs", JSON.stringify(prefs)); } catch(e){} };
+
+/* ---------- store: the local server keeps everything in words.json ---------- */
+const S = { words:new Map(), history:{}, ready:false, persistent:false };
+const queues = {};
+
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 2600);
+}
+
+async function api(method, path, body){
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type":"application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  return res.status === 204 ? null : res.json();
+}
+
+// One write at a time per document; each write sends the latest state when it runs.
+function persist(key, run){
+  if (!S.persistent) return;
+  queues[key] = (queues[key] || Promise.resolve())
+    .then(run)
+    .catch(() => toast("Couldn’t save to words.json. Is the server still running?"));
+}
+
+function wordData(w){ const { id, ...rest } = w; return rest; }
+function saveWord(w){
+  S.words.set(w.id, w);
+  persist(w.id, () => S.words.has(w.id)
+    ? api("PUT", "/api/words/" + encodeURIComponent(w.id), wordData(S.words.get(w.id)))
+    : api("DELETE", "/api/words/" + encodeURIComponent(w.id)));
+}
+function removeWord(id){ S.words.delete(id); persist(id, () => api("DELETE", "/api/words/" + encodeURIComponent(id))); }
+function saveHistory(){ persist("history", () => api("PUT", "/api/history", { days: S.history })); }
+
+async function initStore(){
+  try {
+    const data = await api("GET", "/api/data");
+    for (const [id, w] of Object.entries(data.words || {})) S.words.set(id, { id, ...w });
+    S.history = (data.history && data.history.days) || {};
+    S.persistent = true;
+  } catch(e) { S.persistent = false; }
+  S.ready = true;
+  renderAll();
+  backfillCategories().then(backfillVerbForms);
+}
+
+/* ---------- word categories ---------- */
+const CATEGORIES = [
+  ["noun","Noun","Nouns"], ["verb","Verb","Verbs"], ["adjective","Adjective","Adjectives"], ["adverb","Adverb","Adverbs"],
+  ["preposition","Preposition","Prepositions"], ["conjunction","Conjunction","Conjunctions"], ["pronoun","Pronoun","Pronouns"],
+  ["number","Number","Numbers"], ["particle","Particle","Particles"], ["interjection","Interjection","Interjections"],
+  ["article","Article","Articles"], ["phrase","Phrase","Phrases"], ["other","Other","Other"]
+];
+const catLabel = c => (CATEGORIES.find(x => x[0] === c) || [, ""])[1];
+$("#fCat").innerHTML += CATEGORIES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+
+// Words saved before categories existed get one once: nouns from their article,
+// everything else from a Wiktionary lookup (matching the saved meaning when it can).
+// A word Wiktionary doesn't know is marked "other" so it isn't looked up again.
+async function backfillCategories(){
+  if (!S.persistent) return;
+  const todo = [...S.words.values()].filter(w => !w.category);
+  for (const w of todo) if (w.article) saveWord({ ...w, category:"noun" });
+  let changed = todo.some(w => w.article);
+  for (const w of todo.filter(w => !w.article)) {
+    let results;
+    try { results = await lookupApi(w.de); } catch (e) { continue; }   // offline: try again next time
+    const cur = S.words.get(w.id); if (!cur || cur.category) continue;
+    const r = results.find(r => r.de === w.de && norm(r.en) === norm(w.en)) || results.find(r => r.de === w.de) || results[0];
+    saveWord({ ...cur, category: r ? r.category : "other" });
+    changed = true;
+  }
+  if (changed) renderWords();
+}
+
+// Verbs saved without their conjugation get it from Wiktionary. A verb Wiktionary
+// has no forms for is marked with empty forms ({}) so it isn't looked up again.
+let backfillingForms = false;
+async function backfillVerbForms(){
+  if (!S.persistent || backfillingForms) return;
+  backfillingForms = true;
+  try {
+    const todo = [...S.words.values()].filter(w => w.category === "verb" && !w.forms);
+    for (const w of todo) {
+      let results;
+      try { results = await lookupApi(w.de.replace(/^sich\s+/i, "")); } catch (e) { continue; }   // offline: try again next time
+      const cur = S.words.get(w.id); if (!cur || cur.forms || cur.category !== "verb") continue;
+      const r = results.find(r => r.forms && norm(r.en) === norm(cur.en)) || results.find(r => r.forms);
+      saveWord({ ...cur, forms: r ? r.forms : {} });
+    }
+    if (todo.length) { renderWords(); if (!session) renderIdle(); }
+  } finally { backfillingForms = false; }
+}
+
+/* ---------- word helpers ---------- */
+const newId = () => "w_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+function makeWord({ article="", de, en, plural="", note="", category="", forms=null }){
+  // A word with an article is a noun, whatever the caller knew.
+  if (article) category = "noun";
+  const w = { id:newId(), article, de, en, plural, category, note, created:new Date().toISOString(),
+              box:1, due:today(), seen:0, correct:0, wrong:0, last:null };
+  if (forms && category === "verb") w.forms = forms;
+  return w;
+}
+function splitArticle(s){
+  const m = s.trim().match(/^(der|die|das)\s+(.+)$/i);
+  return m ? { article:m[1].toLowerCase(), de:m[2].trim() } : { article:"", de:s.trim() };
+}
+function deHTML(w){
+  return (w.article ? `<span class="art art-${w.article}">${w.article}</span> ` : "") + esc(w.de);
+}
+// Same word and article is a duplicate; when a meaning is given it must match too,
+// so both "die Bank (bench)" and "die Bank (bank)" can be in the list.
+function exists(article, de, skipId, en){
+  const k = (article + " " + de).toLowerCase();
+  for (const w of S.words.values()) {
+    if (w.id === skipId || (w.article + " " + w.de).toLowerCase() !== k) continue;
+    if (en === undefined || norm(w.en) === norm(en)) return true;
+  }
+  return false;
+}
+const dueWords = () => [...S.words.values()].filter(w => (w.due || "") <= today());
+function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+const STARTERS = [
+  ["der","Hund","dog","die Hunde"],["die","Katze","cat","die Katzen"],["das","Haus","house","die Häuser"],
+  ["das","Wasser","water",""],["der","Tisch","table","die Tische"],["die","Stadt","city, town","die Städte"],
+  ["das","Buch","book","die Bücher"],["die","Zeit","time","die Zeiten"],["","sprechen","to speak","","verb"],
+  ["","gehen","to go, to walk","","verb"],["","schön","beautiful, nice","","adjective"],["","heute","today","","adverb"]
+];
+
+/* ---------- tabs ---------- */
+function setTab(tab){
+  prefs.tab = tab; savePrefs();
+  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  ["practice","words","progress"].forEach(t => $("#view-"+t).hidden = t !== tab);
+}
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+
+/* ---------- practice ---------- */
+let session = null;
+
+function segHTML(name, value, options){
+  return `<div class="seg" role="group">${options.map(([v,l]) =>
+    `<button type="button" data-pref="${name}" data-val="${v}" aria-pressed="${String(String(value)===String(v))}">${l}</button>`).join("")}</div>`;
+}
+
+function renderIdle(){
+  const el = $("#practiceIdle");
+  if (!S.ready) { el.innerHTML = `<div class="panel"><div class="empty"><p class="muted">Loading your words…</p></div></div>`; return; }
+  if (!S.words.size) {
+    el.innerHTML = `<div class="panel"><div class="empty">
+      <span class="word">Los geht’s!</span>
+      <p class="muted" style="max-width:40ch">Add the words you’re learning, then come back here to test yourself. Your results build up on the Progress tab.</p>
+      <div class="row" style="justify-content:center">
+        <button class="btn primary" data-act="goWords">Add your first word</button>
+        <button class="btn" data-act="starters">Add 12 starter words</button>
+      </div></div></div>`;
+    return;
+  }
+  const key = currentTest(), T = TESTS[key];
+  const pool = T.pool(), due = pool.filter(w => isDue(w, T)).length;
+  const fetching = T.tense ? [...S.words.values()].filter(w => w.category === "verb" && !w.forms).length : 0;
+  const fetchNote = fetching ? `<p class="muted" style="font-size:.9rem">Getting the forms of ${fetching} more verb${fetching === 1 ? "" : "s"} from Wiktionary…</p>` : "";
+  let body;
+  if (!pool.length) {
+    body = fetching ? fetchNote : `<p class="muted" style="max-width:60ch">${T.emptyText}</p>
+      <div class="row"><button class="btn" data-act="goWords">Add words</button></div>`;
+  } else {
+    body = `<div class="due"><span class="big num">${due}</span><span>${due === 1 ? T.one : T.many} due today <span class="muted">· ${pool.length} ${T.inList}</span></span></div>
+    <div class="opts">
+      ${key === "vocab" ? `
+      <div class="opt"><span class="label">Direction</span>${segHTML("dir", prefs.dir, [["de-en","DE → EN"],["en-de","EN → DE"],["mix","Mixed"]])}</div>
+      <div class="opt"><span class="label">Answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
+      ${T.tense ? `<div class="opt"><span class="label">Tense</span>${segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l]))}</div>
+      <div class="opt"><span class="label">Ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
+      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[0,"All"]])}</div>
+    </div>
+    <div class="row">
+      ${due ? `<button class="btn primary" data-act="start">Start practice</button>`
+            : `<button class="btn primary" data-act="extra">Practice anyway</button><span class="muted" style="font-size:.9rem">Nothing is due. Extra rounds still count toward your stats.</span>`}
+    </div>${fetchNote}`;
+  }
+  el.innerHTML = `<div class="panel">
+    <div class="opt"><span class="label">Test</span>${segHTML("test", testGroup(key), TEST_OPTIONS)}</div>
+    ${body}</div>`;
+}
+
+document.addEventListener("click", e => {
+  const p = e.target.closest("[data-pref]");
+  if (p) { const v = p.dataset.val; prefs[p.dataset.pref] = p.dataset.pref === "size" ? Number(v) : v; savePrefs(); renderIdle(); renderProgress(); return; }
+  const a = e.target.closest("[data-act]"); if (!a) return;
+  const act = a.dataset.act;
+  if (act === "goWords") { setTab("words"); $("#qWord").focus(); }
+  else if (act === "starters") {
+    let n = 0;
+    for (const [article,de,en,plural,category] of STARTERS) if (!exists(article,de)) { saveWord(makeWord({article,de,en,plural,category})); n++; }
+    renderAll(); toast(`Added ${n} starter words.`);
+  }
+  else if (act === "start") startSession(false);
+  else if (act === "extra") startSession(true);
+  else if (act === "reveal") reveal();
+  else if (act === "knew") answer(true);
+  else if (act === "missed") answer(false);
+  else if (act === "check") checkTyped();
+  else if (act === "next") answer(session.cur.ok);
+  else if (act === "override") answer(true);
+  else if (act === "art") pickArticle(a.dataset.a);
+  else if (act === "quit") endSession();
+  else if (act === "retry") startSession(false, session.missedIds);
+  else if (act === "done") { session = null; renderAll(); }
+  else if (act === "uml") { const i = (lastInput && document.body.contains(lastInput) && !lastInput.disabled) ? lastInput : $("#typed"); if (i) { const s=i.selectionStart ?? i.value.length; i.value = i.value.slice(0,s)+a.dataset.ch+i.value.slice(i.selectionEnd ?? s); i.focus(); i.setSelectionRange(s+1,s+1); } }
+});
+
+/* ---------- the three tests ----------
+   Each test keeps its own box, due date and counts on the word, and its own
+   daily totals in history: knowing what "Bank" means says nothing about
+   remembering that it's "die", or that its plural is "Bänke". */
+const ARTS = ["der", "die", "das"];
+const nounWords = () => [...S.words.values()].filter(w => ARTS.includes(w.article));
+const pluralOf = w => (w.plural || "").replace(/^die\s+/i, "").trim();
+const pluralWords = () => nounWords().filter(w => pluralOf(w));
+
+const TESTS = {
+  vocab: {
+    box:"box", due:"due", seen:"seen", correct:"correct", wrong:"wrong", hc:"c", hw:"w",
+    pool: () => [...S.words.values()],
+    one:"word is", many:"words are", inList:"in your list", unit:"words",
+    doneText:"known on the first try", allText:"Every word on the first try.",
+    emptyText:"",
+    chartTitle:"Vocabulary answers, last 30 days", boxesNote:"Each word climbs a box when you know it and drops back to box 1 when you miss it. Higher boxes come back less often.",
+    trickyTitle:"Trickiest words", accLabel:"known, last 30 days",
+  },
+  articles: {
+    box:"artBox", due:"artDue", seen:"artSeen", correct:"artCorrect", wrong:"artWrong", hc:"ac", hw:"aw",
+    pool: nounWords,
+    one:"noun is", many:"nouns are", inList:"nouns in your list", unit:"nouns",
+    doneText:"articles right on the first try", allText:"Every article on the first try.",
+    emptyText:"Your list has no nouns with an article yet. Add a few, like <i>Hund</i> or <i>Stadt</i>, and they’ll show up here.",
+    chartTitle:"Article answers, last 30 days", boxesNote:"A noun climbs a box when you pick the right article and drops back to box 1 when you don’t.",
+    trickyTitle:"Trickiest articles", accLabel:"articles right, 30 days",
+  },
+  plural: {
+    box:"plBox", due:"plDue", seen:"plSeen", correct:"plCorrect", wrong:"plWrong", hc:"pc", hw:"pw",
+    pool: pluralWords,
+    one:"noun is", many:"nouns are", inList:"nouns with a plural", unit:"nouns",
+    doneText:"plurals right on the first try", allText:"Every plural on the first try.",
+    emptyText:"None of your nouns has a plural yet. Words you add by looking them up get their plural automatically; you can also edit a word and fill in its plural.",
+    chartTitle:"Plural answers, last 30 days", boxesNote:"A noun climbs a box when you type its plural correctly and drops back to box 1 when you don’t.",
+    trickyTitle:"Trickiest plurals", accLabel:"plurals right, 30 days",
+  },
+};
+// Verb conjugation: one test per tense, each with its own boxes and history.
+const TENSES = [["präsens","Präsens","vp"], ["präteritum","Präteritum","vt"], ["perfekt","Perfekt","vk"]];
+const verbWords = tense => [...S.words.values()].filter(w => w.category === "verb" && w.forms && Array.isArray(w.forms[tense]) && w.forms[tense].length === 6);
+for (const [tense, label, pre] of TENSES) {
+  TESTS["verbs_" + tense] = {
+    tense, label,
+    box:pre+"Box", due:pre+"Due", seen:pre+"Seen", correct:pre+"Correct", wrong:pre+"Wrong", hc:pre+"c", hw:pre+"w",
+    pool: () => verbWords(tense),
+    one:"verb is", many:"verbs are", inList:"verbs in your list", unit:"verbs",
+    doneText:`verbs right on the first try (${label})`, allText:"Every verb right on the first try.",
+    emptyText:"None of your verbs has its forms yet. Verbs you add by looking them up get them automatically, and verbs already in your list get them from Wiktionary when the page loads.",
+    chartTitle:`Verb answers (${label}), last 30 days`, boxesNote:`A verb climbs a box when you get all six ${label} forms right and drops back to box 1 when you miss one. Each tense has its own boxes.`,
+    trickyTitle:`Trickiest verbs (${label})`, accLabel:`verbs right, 30 days`,
+  };
+}
+const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"]];
+const tenseKey = () => TENSES.some(t => t[0] === prefs.tense) ? prefs.tense : "präsens";
+const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : TESTS[name] ? name : "vocab";
+const testGroup = key => key.startsWith("verbs_") ? "verbs" : key;
+const currentTest = () => testKey(prefs.test);
+const boxIn = (w, T) => w[T.box] || 1;
+const isDue = (w, T) => (w[T.due] || "") <= today();
+
+function startSession(extra, onlyIds){
+  const key = currentTest(), T = TESTS[key];
+  let pool;
+  if (onlyIds) pool = onlyIds.map(id => S.words.get(id)).filter(Boolean);
+  else pool = extra ? T.pool() : T.pool().filter(w => isDue(w, T));
+  pool = shuffle(pool.slice()).sort((a,b) => boxIn(a, T) - boxIn(b, T));
+  if (!onlyIds && prefs.size) pool = pool.slice(0, prefs.size);
+  if (!pool.length) return;
+  session = { test:key, queue: pool.map(w => ({ id:w.id, again:false })), total:pool.length, done:0, knew:0, missedIds:[], cur:null, finished:false };
+  $("#practiceIdle").hidden = true; $("#practiceSession").hidden = false;
+  nextCard();
+}
+
+function nextCard(){
+  let c;
+  while ((c = session.queue.shift()) && !S.words.has(c.id)) {}
+  if (!c) { finishSession(); return; }
+  const dir = prefs.dir === "mix" ? (Math.random() < .5 ? "de-en" : "en-de") : prefs.dir;
+  session.cur = { ...c, dir, revealed:false, ok:null, msg:"", picked:null, typed:"" };
+  renderCard();
+}
+
+function sessionHeader(s, label, box, again){
+  const pct = Math.round(s.done / s.total * 100);
+  const pips = [1,2,3,4,5].map(i => `<i class="${i <= box ? "on" : ""}"></i>`).join("");
+  return {
+    top: `<div class="row" style="justify-content:space-between">
+      <span class="label num">Card ${Math.min(s.done+1, s.total)} of ${s.total}</span>
+      <button class="btn link" data-act="quit">End round</button>
+    </div>
+    <div class="progress"><i style="width:${pct}%"></i></div>`,
+    cardTop: `<div class="card-top"><span class="label">${label}</span>
+      ${again ? `<span class="again-tag">Once more</span>` : `<span class="pips" title="Box ${box} of 5">${pips}</span>`}</div>`
+  };
+}
+
+const umlautButtons = () => `<div class="umlauts">${["ä","ö","ü","ß"].map(ch => `<button type="button" data-act="uml" data-ch="${ch}">${ch}</button>`).join("")}</div>`;
+
+function renderCard(){
+  if (session.test === "articles") { renderArticleCard(); return; }
+  if (session.test === "plural") { renderPluralCard(); return; }
+  if (session.test.startsWith("verbs_")) { renderVerbCard(); return; }
+  const s = session, c = s.cur, w = S.words.get(c.id);
+  const front = c.dir === "de-en" ? `<span class="word">${deHTML(w)}</span>` : `<span class="word">${esc(w.en)}</span>`;
+  const back = c.dir === "de-en" ? `<span class="word">${esc(w.en)}</span>` : `<span class="word">${deHTML(w)}</span>`;
+  const extras = [w.plural && `Plural: ${esc(w.plural)}`, w.note && esc(w.note)].filter(Boolean).map(x => `<span class="extra">${x}</span>`).join("");
+  const typing = prefs.mode === "type";
+  let answerBlock = "", controls = "";
+  if (c.revealed) {
+    const verdict = typing ? `<span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig! That’s right." : "Not quite." }${c.msg ? " " + esc(c.msg) : ""}</span>` : "";
+    answerBlock = `<div class="answer">${verdict}${back}${extras}</div>`;
+    controls = typing
+      ? `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`
+      : `<div class="actions"><button class="btn miss" data-act="missed">Didn’t know <span class="kbd">1</span></button><button class="btn ok" data-act="knew">Knew it <span class="kbd">2</span></button></div>`;
+  } else {
+    controls = typing
+      ? `<div class="typebox"><input id="typed" placeholder="${c.dir === "de-en" ? "Type the English" : "Type the German, with article"}" autocomplete="off" autocapitalize="off" spellcheck="false">
+          ${c.dir === "en-de" ? umlautButtons() : ""}
+          <div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div></div>`
+      : `<div class="row" style="justify-content:center"><button class="btn primary" data-act="reveal" id="revealBtn">Show answer <span class="kbd">Space</span></button></div>`;
+  }
+  const h = sessionHeader(s, c.dir === "de-en" ? "Deutsch → English" : "English → Deutsch", w.box || 1, c.again);
+  $("#practiceSession").innerHTML = `${h.top}
+    <div class="card">${h.cardTop}
+      <div class="prompt">${front}</div>
+      ${answerBlock}
+    </div>
+    ${controls}
+    ${typing && c.dir === "en-de" && !c.revealed ? `<p class="hint">No umlaut keys? “ae”, “oe”, “ue” and “ss” count too.</p>` : ""}`;
+  const t = $("#typed"); if (t) t.focus();
+  else { const b = $("#nextBtn") || $("#revealBtn"); if (b) b.focus({ preventScroll:true }); }
+}
+
+/* ---------- article test ---------- */
+// Endings that reliably predict the gender. Shown after an answer only when they fit this word.
+const GENDER_RULES = [
+  [/(ung|heit|keit|schaft|ion|tät|ik|ei|enz|anz)$/, "die", "always"],
+  [/(chen|lein)$/, "das", "always"],
+  [/(ment|um|tum|nis)$/, "das", "usually"],
+  [/(ling|ismus|ist|or|ig|ich|ant)$/, "der", "usually"],
+  [/(e)$/, "die", "usually"],
+];
+function genderTip(w){
+  const word = w.de.toLowerCase();
+  for (const [re, art, how] of GENDER_RULES) {
+    const m = word.match(re);
+    if (m && art === w.article) return `Nouns ending in -${m[1]} are ${how} ${art}.`;
+  }
+  return "";
+}
+
+function renderArticleCard(){
+  const s = session, c = s.cur, w = S.words.get(c.id);
+  const h = sessionHeader(s, "Der, die oder das?", w.artBox || 1, c.again);
+  let answerBlock = "", after = "";
+  if (c.revealed) {
+    const tip = genderTip(w);
+    answerBlock = `<div class="answer">
+      <span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig!" : `Not ${esc(c.picked)}. It’s ${esc(w.article)}.`}</span>
+      <span class="word">${deHTML(w)}</span>
+      ${w.plural ? `<span class="extra">Plural: ${esc(w.plural)}</span>` : ""}
+      ${tip ? `<span class="extra">${esc(tip)}</span>` : ""}
+    </div>`;
+    after = `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button></div>`;
+  }
+  const buttons = ARTS.map((a, i) => {
+    const state = !c.revealed ? "" : a === w.article ? "correct" : a === c.picked ? "wrong" : "dim";
+    return `<button class="artbtn art-${a} ${state}" data-act="art" data-a="${a}" ${c.revealed ? "disabled" : ""}>${a}<span class="kbd">${i + 1}</span></button>`;
+  }).join("");
+  $("#practiceSession").innerHTML = `${h.top}
+    <div class="card">${h.cardTop}
+      <div class="prompt">
+        <span class="word">${esc(w.de)}</span>
+        <span class="extra">${esc(w.en)}</span>
+      </div>
+      ${answerBlock}
+    </div>
+    <div class="artbtns">${buttons}</div>
+    ${after}`;
+  const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true });
+}
+
+function pickArticle(a){
+  const c = session && session.cur;
+  if (!c || c.revealed || session.test !== "articles") return;
+  const w = S.words.get(c.id);
+  c.picked = a; c.ok = a === w.article; c.revealed = true;
+  renderArticleCard();
+  // A right answer moves on by itself; a wrong one waits so the answer can sink in.
+  if (c.ok) setTimeout(() => { if (session && session.cur === c) answer(true); }, 900);
+}
+
+/* ---------- plural test ---------- */
+const unUmlaut = s => s.replace(/ä/g,"a").replace(/ö/g,"o").replace(/ü/g,"u").replace(/Ä/g,"A").replace(/Ö/g,"O").replace(/Ü/g,"U");
+
+// Dictionary-style plural pattern: Hund → -e, Stadt → ¨-e, Buch → ¨-er, Mädchen → –, Apfel → ¨.
+function pluralPattern(w){
+  const sg = w.de, pl = pluralOf(w);
+  if (!pl) return "";
+  if (pl === sg) return "–";
+  let base = pl, umlaut = false;
+  if (!pl.startsWith(sg) && unUmlaut(pl).startsWith(sg) && unUmlaut(pl) !== pl) { base = unUmlaut(pl); umlaut = true; }
+  if (!base.startsWith(sg)) return "";   // irregular, e.g. Museum → Museen
+  const suffix = base.slice(sg.length);
+  return (umlaut ? "¨" : "") + (suffix ? "-" + suffix : "");
+}
+const PATTERN_NAMES = { "-e":"add -e", "¨-e":"umlaut + -e", "-er":"add -er", "¨-er":"umlaut + -er", "-n":"add -n", "-en":"add -en",
+                        "-s":"add -s", "-nen":"add -nen", "–":"same as the singular", "¨":"umlaut only" };
+
+function checkPlural(w, input){
+  const strip = s => deFold(s).replace(/^die /, "");
+  const got = strip(input), exp = strip(pluralOf(w));
+  if (!got) return { ok:false };
+  if (got === exp) return { ok:true };
+  if (got === strip(w.de)) return { ok:false, msg:"That’s the singular." };
+  const noUml = s => s.replace(/ae/g,"a").replace(/oe/g,"o").replace(/ue/g,"u");
+  if (noUml(got) === noUml(exp)) return { ok:false, msg:"Close. Watch the umlaut." };
+  return { ok:false };
+}
+
+function renderPluralCard(){
+  const s = session, c = s.cur, w = S.words.get(c.id);
+  const h = sessionHeader(s, "What’s the plural?", w.plBox || 1, c.again);
+  let answerBlock = "", controls;
+  if (c.revealed) {
+    const pat = pluralPattern(w);
+    answerBlock = `<div class="answer">
+      <span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig!" : "Not quite."}${c.msg ? " " + esc(c.msg) : ""}</span>
+      <span class="word"><span class="art art-die">die</span> ${esc(pluralOf(w))}</span>
+      ${!c.ok && c.typed ? `<span class="extra">You wrote: ${esc(c.typed)}</span>` : ""}
+      ${pat ? `<span class="extra">Pattern: <b class="num">${esc(pat)}</b>${PATTERN_NAMES[pat] ? ` (${PATTERN_NAMES[pat]})` : ""}</span>` : `<span class="extra">Irregular plural</span>`}
+    </div>`;
+    controls = `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`;
+  } else {
+    controls = `<div class="typebox">
+        <div class="plrow"><span class="art art-die">die</span><input id="typed" placeholder="${esc(w.de)}…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        ${umlautButtons()}
+        <div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div>
+      </div>
+      <p class="hint">No umlaut keys? “ae”, “oe”, “ue” and “ss” count too.</p>`;
+  }
+  $("#practiceSession").innerHTML = `${h.top}
+    <div class="card">${h.cardTop}
+      <div class="prompt">
+        <span class="word">${deHTML(w)}</span>
+        <span class="extra">${esc(w.en)}</span>
+      </div>
+      ${answerBlock}
+    </div>
+    ${controls}`;
+  const t = $("#typed"); if (t) t.focus();
+  else { const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true }); }
+}
+
+/* ---------- verb test ---------- */
+const PERSONS = ["ich", "du", "er/sie/es", "wir", "ihr", "sie/Sie"];
+let lastInput = null;   // the answer field the umlaut buttons type into
+document.addEventListener("focusin", e => { if (e.target.matches && e.target.matches("#practiceSession input")) lastInput = e.target; });
+// Keep the cursor in the answer field when an umlaut button is pressed.
+document.addEventListener("mousedown", e => { if (e.target.closest && e.target.closest("[data-act=uml]")) e.preventDefault(); });
+
+const cjMode = () => prefs.cjmode === "one" ? "one" : "all";
+const personsFor = () => cjMode() === "one" ? [Math.floor(Math.random() * 6)] : [0, 1, 2, 3, 4, 5];
+
+const altsOf = cell => String(cell || "").split(" / ").map(x => x.trim()).filter(Boolean);
+// "geht · ging · ist gegangen": er-form in Präsens, Präteritum and Perfekt.
+function principalParts(w){
+  const f = w.forms || {};
+  return [f.präsens, f.präteritum, f.perfekt].filter(Array.isArray).map(t => altsOf(t[2])[0]).filter(Boolean).join(" · ");
+}
+
+function checkVerbForm(cell, typed, person){
+  // Typing the pronoun too ("ich gehe") is fine.
+  const pron = new RegExp("^(" + person.split("/").join("|") + ")\\s+", "i");
+  const got = deFold(typed.replace(pron, ""));
+  if (!got) return false;
+  return altsOf(cell).some(a => deFold(a) === got);
+}
+
+function renderVerbCard(){
+  const s = session, c = s.cur, w = S.words.get(c.id), T = TESTS[s.test];
+  const cells = w.forms[T.tense];
+  const h = sessionHeader(s, `${T.label} · conjugate`, w[T.box] || 1, c.again);
+  c.typedAll = c.typedAll || ["", "", "", "", "", ""];
+  c.persons = c.persons || personsFor();
+  const one = c.persons.length === 1;
+  const rows = c.persons.map(i => {
+    const p = PERSONS[i];
+    const typed = c.typedAll[i], state = !c.revealed ? "" : c.rows[i] ? "ok" : "miss";
+    const fix = c.revealed && !c.rows[i] ? `<span class="cjfix">${esc(altsOf(cells[i]).join(" / "))}</span>` : "";
+    return `<div class="cjrow ${state}">
+      <label for="cj${i}">${p}</label>
+      <input id="cj${i}" class="cjin" value="${esc(typed)}" autocomplete="off" autocapitalize="off" spellcheck="false" ${c.revealed ? "disabled" : ""}>
+      ${fix}</div>`;
+  }).join("");
+  const nWrong = c.revealed ? c.persons.filter(i => !c.rows[i]).length : 0;
+  const verdict = !c.revealed ? "" : `<span class="verdict ${c.ok ? "ok" : "miss"}">${
+    one ? (c.ok ? "Richtig!" : "Not quite.") : c.ok ? "Richtig! All six forms." : `${nWrong} of 6 not quite.`}</span>`;
+  const hint = T.tense === "perfekt" ? "Type the helper verb too: “bin gegangen”, “habe gemacht”." :
+               /^sich\s/i.test(w.de) ? "Leave out the reflexive pronoun." : "";
+  const controls = c.revealed
+    ? `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`
+    : `${umlautButtons()}<div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div>
+       <p class="hint">${one ? "" : "Enter moves to the next line. "}No umlaut keys? “ae”, “oe”, “ue” and “ss” count too.</p>`;
+  $("#practiceSession").innerHTML = `${h.top}
+    <div class="card">${h.cardTop}
+      <div class="prompt">
+        <span class="word">${esc(w.de)}</span>
+        <span class="extra">${esc(w.en)}</span>
+        ${verdict}
+      </div>
+      <div class="cjgrid ${one ? "one" : ""}">${rows}</div>
+      ${hint && !c.revealed ? `<p class="hint">${esc(hint)}</p>` : ""}
+    </div>
+    ${controls}`;
+  if (c.revealed) { const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true }); }
+  else {
+    // Keep what's typed if the card re-renders, and start in the first empty field.
+    document.querySelectorAll(".cjin").forEach((inp, i) => inp.addEventListener("input", () => { c.typedAll[i] = inp.value; }));
+    const first = [...document.querySelectorAll(".cjin")].find(x => !x.value) || $("#cj0");
+    first.focus();
+  }
+}
+
+function checkVerbCard(){
+  const c = session.cur; if (!c || c.revealed) return;
+  const w = S.words.get(c.id), T = TESTS[session.test], cells = w.forms[T.tense];
+  c.rows = [];
+  for (const i of c.persons) {
+    c.typedAll[i] = ($("#cj" + i) || {}).value || "";
+    c.rows[i] = checkVerbForm(cells[i], c.typedAll[i], PERSONS[i]);
+  }
+  c.ok = c.persons.every(i => c.rows[i]); c.revealed = true;
+  renderVerbCard();
+}
+
+function reveal(){ if (!session || session.cur.revealed) return; session.cur.revealed = true; renderCard(); }
+
+function norm(s){ return String(s).toLowerCase().normalize("NFC").replace(/[.!?"“”„'’()]/g,"").replace(/\s+/g," ").trim(); }
+function deFold(s){ return norm(s).replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss"); }
+const stripEn = s => norm(s).replace(/^(to|the|a|an) /,"");
+function checkAnswer(w, dir, input){
+  if (!input.trim()) return { ok:false };
+  if (dir === "de-en") {
+    const alts = w.en.split(/[,/;]/).map(stripEn).filter(Boolean);
+    return { ok: alts.includes(stripEn(input)) };
+  }
+  const exp = deFold((w.article ? w.article + " " : "") + w.de), got = deFold(input);
+  if (got === exp) return { ok:true };
+  if (w.article) {
+    if (got === deFold(w.de)) return { ok:false, msg:`Right word, but nouns need their article: ${w.article} ${w.de}.` };
+    const m = got.match(/^(der|die|das) (.+)$/);
+    if (m && m[2] === deFold(w.de)) return { ok:false, msg:`Wrong article. It’s ${w.article}, not ${m[1]}.` };
+  }
+  return { ok:false };
+}
+function checkTyped(){
+  if (session.test.startsWith("verbs_")) { checkVerbCard(); return; }
+  const c = session.cur, w = S.words.get(c.id), typed = $("#typed").value;
+  const r = session.test === "plural" ? checkPlural(w, typed) : checkAnswer(w, c.dir, typed);
+  c.ok = r.ok; c.msg = r.msg || ""; c.typed = typed.trim(); c.revealed = true; renderCard();
+}
+
+function answer(ok){
+  const s = session, c = s.cur; if (!c || !c.revealed || c.answered) return;
+  c.answered = true;
+  if (!c.again) {
+    const T = TESTS[s.test], w = { ...S.words.get(c.id) }, t = today();
+    const h = S.history[t] || (S.history[t] = { c:0, w:0 });
+    w[T.seen] = (w[T.seen] || 0) + 1;
+    if (s.test === "vocab") w.last = new Date().toISOString();
+    if (ok) {
+      w[T.correct] = (w[T.correct] || 0) + 1;
+      // Extra practice on a word that isn't due doesn't move it up a box.
+      if ((w[T.due] || t) <= t) { w[T.box] = Math.min(5, (w[T.box] || 1) + 1); w[T.due] = addDays(t, INTERVALS[w[T.box]]); }
+      h[T.hc] = (h[T.hc] || 0) + 1;
+    } else {
+      w[T.wrong] = (w[T.wrong] || 0) + 1; w[T.box] = 1; w[T.due] = t;
+      h[T.hw] = (h[T.hw] || 0) + 1;
+    }
+    saveWord(w); saveHistory();
+    s.done++;
+    if (ok) s.knew++;
+    else { s.missedIds.push(c.id); s.queue.push({ id:c.id, again:true }); s.total++; }
+  } else { s.done++; }
+  updateCounts();
+  nextCard();
+}
+
+function finishSession(){
+  const s = session, T = TESTS[s.test]; s.finished = true;
+  const graded = s.knew + s.missedIds.length;
+  const missed = s.missedIds.map(id => S.words.get(id)).filter(Boolean);
+  const detail = w => s.test === "articles" ? (genderTip(w) || w.en) : s.test === "plural" ? (w.plural || "") : T.tense ? principalParts(w) || w.en : w.en;
+  $("#practiceSession").innerHTML = `<div class="panel">
+    <span class="label">Round complete</span>
+    <div class="due"><span class="big num">${s.knew}/${graded}</span><span>${T.doneText}</span></div>
+    ${missed.length ? `<div class="stack"><h3>Worth another look</h3><ul class="missed">${missed.map(w =>
+      `<li><span>${deHTML(w)}</span><span class="muted">${esc(detail(w))}</span></li>`).join("")}</ul></div>`
+      : `<p>${T.allText} Sehr gut!</p>`}
+    <div class="row">
+      ${missed.length ? `<button class="btn primary" data-act="retry">Practice these ${missed.length} again</button>` : ""}
+      <button class="btn ${missed.length ? "" : "primary"}" data-act="done">Done</button>
+    </div></div>`;
+}
+function endSession(){ if (!session) return; if (session.knew + session.missedIds.length) finishSession(); else { session = null; renderAll(); } }
+
+document.addEventListener("keydown", e => {
+  if (!session || session.finished || prefs.tab !== "practice") return;
+  const c = session.cur; if (!c) return;
+  const inInput = e.target.matches("input,textarea,select");
+  if (session.test === "articles") {
+    if (inInput) return;
+    const i = ["1","2","3"].indexOf(e.key);
+    if (!c.revealed && i >= 0) { e.preventDefault(); pickArticle(ARTS[i]); }
+    else if (c.revealed && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); answer(c.ok); }
+    return;
+  }
+  if (session.test.startsWith("verbs_")) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (c.revealed) { answer(c.ok); return; }
+    const inputs = [...document.querySelectorAll(".cjin")], i = inputs.indexOf(e.target);
+    if (i >= 0 && i < inputs.length - 1) inputs[i + 1].focus(); else checkVerbCard();
+    return;
+  }
+  if (session.test === "plural" || prefs.mode === "type") {
+    if (e.key === "Enter") { e.preventDefault(); if (!c.revealed) { if (inInput) checkTyped(); } else answer(c.ok); }
+    return;
+  }
+  if (inInput) return;
+  if (!c.revealed && (e.key === " " || e.key === "Enter")) { e.preventDefault(); reveal(); }
+  else if (c.revealed && (e.key === "1" || e.key === "ArrowLeft")) { e.preventDefault(); answer(false); }
+  else if (c.revealed && (e.key === "2" || e.key === "ArrowRight")) { e.preventDefault(); answer(true); }
+});
+
+/* ---------- words ---------- */
+let editingId = null, confirmId = null;
+
+$("#fArt").addEventListener("change", () => { if ($("#fArt").value) $("#fCat").value = "noun"; });
+$("#fDe").addEventListener("blur", () => {
+  const v = $("#fDe").value, s = splitArticle(v);
+  if (s.article) { $("#fArt").value = s.article; $("#fDe").value = s.de; $("#fCat").value = "noun"; }
+});
+$("#wordForm").addEventListener("submit", e => {
+  e.preventDefault();
+  let article = $("#fArt").value, raw = $("#fDe").value.trim();
+  const s = splitArticle(raw); if (s.article) { article = s.article; raw = s.de; }
+  const en = $("#fEn").value.trim();
+  if (!raw || !en) { toast("Fill in both the German and the English."); return; }
+  if (exists(article, raw, editingId, en)) { toast(`“${(article ? article + " " : "") + raw}” is already in your list.`); return; }
+  const fields = { article, de:raw, en, plural:$("#fPl").value.trim(), note:$("#fNote").value.trim(), category: article ? "noun" : $("#fCat").value };
+  if (editingId && S.words.has(editingId)) { saveWord({ ...S.words.get(editingId), ...fields }); toast("Saved."); cancelEdit(); }
+  else { saveWord(makeWord(fields)); toast(`Added ${(article ? article + " " : "") + raw}.`); $("#wordForm").reset(); $("#fDe").focus(); }
+  renderAll();
+});
+function startEdit(id){
+  const w = S.words.get(id); if (!w) return;
+  editingId = id;
+  $("#fArt").value = w.article || ""; $("#fDe").value = w.de; $("#fEn").value = w.en;
+  $("#fPl").value = w.plural || ""; $("#fNote").value = w.note || ""; $("#fCat").value = w.category || "";
+  $("#formTitle").textContent = "Edit word"; $("#fSubmit").textContent = "Save changes"; $("#fCancel").hidden = false;
+  $("#manual").open = true;
+  $("#wordForm").scrollIntoView({ behavior:"smooth", block:"center" }); $("#fDe").focus({ preventScroll:true });
+}
+function cancelEdit(){
+  editingId = null; $("#wordForm").reset();
+  $("#formTitle").textContent = "Enter a word yourself"; $("#fSubmit").textContent = "Add word"; $("#fCancel").hidden = true;
+}
+$("#fCancel").addEventListener("click", cancelEdit);
+
+/* ---------- quick add: look the word up on Wiktionary ---------- */
+const POS = { Substantiv:"noun", Verb:"verb", Adjektiv:"adjective", Adverb:"adverb", Präposition:"preposition",
+              Konjunktion:"conjunction", Pronomen:"pronoun", Personalpronomen:"pronoun", Interjektion:"interjection",
+              Numerale:"number", Kardinalzahl:"number", Artikel:"article", Partikel:"particle" };
+let qState = { word:"", results:[] }, qSeq = 0;
+const lookupApi = word => api("GET", "/api/lookup?word=" + encodeURIComponent(word)).then(d => d.results || []);
+
+$("#quickForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const word = splitArticle($("#qWord").value).de;
+  if (!word) return;
+  if (qState.word === word && qState.results.length) addResult(0);   // Enter again adds the top result
+  else quickLookup(word);
+});
+
+async function quickLookup(word){
+  const box = $("#qResults"), seq = ++qSeq;
+  box.hidden = false; box.innerHTML = `<div class="msg muted">Looking up “${esc(word)}”…</div>`;
+  $("#qBtn").disabled = true;
+  try {
+    const results = await lookupApi(word);
+    if (seq !== qSeq) return;
+    qState = { word, results }; renderResults();
+  } catch (err) {
+    if (seq !== qSeq) return;
+    qState = { word:"", results:[] };
+    box.innerHTML = `<div class="msg">Couldn’t look that up (${esc(err.message)}). <button class="btn link" type="button" data-q="manual">Enter it yourself</button></div>`;
+  } finally { if (seq === qSeq) $("#qBtn").disabled = false; }
+}
+
+function renderResults(){
+  const box = $("#qResults");
+  if (!qState.results.length) {
+    box.innerHTML = `<div class="msg">No German entry for “${esc(qState.word)}” on Wiktionary. Check the spelling, or <button class="btn link" type="button" data-q="manual">enter it yourself</button>.</div>`;
+    return;
+  }
+  const SHOWN = 4, all = qState.results, visible = qState.expanded ? all : all.slice(0, SHOWN);
+  box.innerHTML = visible.map((r, i) => {
+    const dup = exists(r.article, r.de, null, r.en);
+    return `<div class="result ${i === 0 ? "first" : ""}">
+      <div style="min-width:0">
+        <div class="rde">${deHTML(r)}${r.plural ? ` <span class="pl">· ${esc(r.plural)}</span>` : ""}<span class="pos">${esc(catLabel(r.category) || POS[r.pos] || r.pos)}</span></div>
+        <div class="ren">${esc(r.en)}</div>
+        ${r.gloss ? `<div class="gloss" lang="de">${esc(r.gloss)}</div>` : ""}
+      </div>
+      <div class="ract">
+        <button class="btn small" type="button" data-q="edit" data-i="${i}">Edit first</button>
+        <button class="btn small ${dup ? "" : "primary"}" type="button" data-q="add" data-i="${i}" ${dup ? "disabled" : ""}>${dup ? "In your list" : "Add"}</button>
+      </div></div>`;
+  }).join("") + (all.length > SHOWN
+    ? `<button class="btn link more" type="button" data-q="more">${qState.expanded ? "Show fewer meanings" : `Show ${all.length - SHOWN} more meaning${all.length - SHOWN === 1 ? "" : "s"}`}</button>`
+    : "");
+}
+
+function addResult(i){
+  const r = qState.results[i]; if (!r) return;
+  const label = (r.article ? r.article + " " : "") + r.de;
+  if (exists(r.article, r.de, null, r.en)) { toast(`${label} is already in your list.`); return; }
+  saveWord(makeWord({ article:r.article, de:r.de, en:r.en, plural:r.plural, note:r.gloss || "", category:r.category || "", forms:r.forms }));
+  toast(`Added ${label}.`);
+  qState = { word:"", results:[] };
+  $("#qWord").value = ""; $("#qResults").hidden = true; $("#qWord").focus();
+  renderAll();
+}
+
+$("#qResults").addEventListener("click", e => {
+  const b = e.target.closest("[data-q]"); if (!b) return;
+  const r = qState.results[Number(b.dataset.i)];
+  if (b.dataset.q === "add") addResult(Number(b.dataset.i));
+  else if (b.dataset.q === "more") { qState.expanded = !qState.expanded; renderResults(); }
+  else if (b.dataset.q === "edit" && r) {
+    cancelEdit();
+    $("#fArt").value = r.article; $("#fDe").value = r.de; $("#fEn").value = r.en; $("#fPl").value = r.plural || ""; $("#fNote").value = r.gloss || ""; $("#fCat").value = r.category || "";
+    $("#manual").open = true; $("#fEn").focus(); $("#fEn").select();
+  } else if (b.dataset.q === "manual") {
+    cancelEdit(); $("#fDe").value = qState.word || splitArticle($("#qWord").value).de;
+    $("#manual").open = true; $("#fEn").focus();
+  }
+});
+
+$("#bulkAdd").addEventListener("click", async () => {
+  const lines = $("#bulkText").value.split(/\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return;
+  const btn = $("#bulkAdd"), status = $("#bulkStatus");
+  btn.disabled = true;
+  let added = 0, dup = 0;
+  const notFound = [];
+  for (let i = 0; i < lines.length; i++) {
+    const parts = lines[i].split(/\t|\s*=\s*|\s+[-–—]\s+|\s*;\s*/).map(p => p.trim()).filter(Boolean);
+    const s = splitArticle(parts[0]);
+    let word;
+    if (parts.length >= 2) word = { ...s, en:parts.slice(1).join(", ") };
+    else {
+      status.textContent = `Looking up ${i + 1} of ${lines.length}…`;
+      try { const [r] = await lookupApi(s.de); if (r) word = { article:r.article, de:r.de, en:r.en, plural:r.plural, note:r.gloss || "", category:r.category || "", forms:r.forms }; } catch(e) {}
+      if (!word) { notFound.push(lines[i]); continue; }
+    }
+    if (exists(word.article, word.de, null, word.en)) { dup++; continue; }
+    saveWord(makeWord(word)); added++;
+  }
+  // Keep the lines that couldn't be looked up so they can be fixed and retried.
+  $("#bulkText").value = notFound.join("\n");
+  status.textContent = notFound.length ? `Couldn’t find ${notFound.length}; they’re left in the box. Add “= meaning” to them or check the spelling.` : "";
+  btn.disabled = false; renderAll();
+  toast(`Added ${added} word${added === 1 ? "" : "s"}${dup ? `, skipped ${dup} already in your list` : ""}.`);
+});
+
+$("#search").addEventListener("input", renderWords);
+$("#wordList").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const id = b.closest("[data-id]").dataset.id;
+  if (b.dataset.w === "edit") startEdit(id);
+  else if (b.dataset.w === "del") { confirmId = id; renderWords(); }
+  else if (b.dataset.w === "no") { confirmId = null; renderWords(); }
+  else if (b.dataset.w === "yes") { const w = S.words.get(id); removeWord(id); confirmId = null; if (editingId === id) cancelEdit(); renderAll(); toast(`Deleted ${w ? w.de : "word"}.`); }
+});
+
+const ICON_EDIT = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3z"/></svg>`;
+const ICON_DEL = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/></svg>`;
+
+let catFilter = "";   // "" = all categories
+
+function renderCatFilter(){
+  const counts = {};
+  for (const w of S.words.values()) { const c = w.category || "uncategorized"; counts[c] = (counts[c] || 0) + 1; }
+  if (catFilter && !counts[catFilter]) catFilter = "";
+  const chips = [["", "All", S.words.size]]
+    .concat(CATEGORIES.filter(([v]) => counts[v]).map(([v, , plural]) => [v, plural, counts[v]]))
+    .concat(counts.uncategorized ? [["uncategorized", "Not set", counts.uncategorized]] : []);
+  // Only worth showing once there's more than one category to choose from.
+  $("#catFilter").hidden = chips.length <= 2;
+  $("#catFilter").innerHTML = chips.map(([v, label, n]) =>
+    `<button type="button" data-cat="${v}" aria-pressed="${String(catFilter === v)}">${label}<span class="n">${n}</span></button>`).join("");
+}
+$("#catFilter").addEventListener("click", e => {
+  const b = e.target.closest("[data-cat]"); if (!b) return;
+  catFilter = b.dataset.cat; renderWords();
+});
+
+function renderWords(){
+  const list = $("#wordList");
+  if (!S.ready) { list.innerHTML = `<li class="empty muted">Loading your words…</li>`; return; }
+  renderCatFilter();
+  const q = norm($("#search").value);
+  const words = [...S.words.values()].sort((a,b) => (b.created||"").localeCompare(a.created||""))
+    .filter(w => !catFilter || (w.category || "uncategorized") === catFilter)
+    .filter(w => !q || norm(w.article + " " + w.de).includes(q) || norm(w.en).includes(q));
+  if (!S.words.size) { list.innerHTML = `<li class="empty"><p class="muted">No words yet. Add one above, or start with a small set.</p><button class="btn" data-act="starters">Add 12 starter words</button></li>`; return; }
+  if (!words.length) { list.innerHTML = `<li class="empty muted">${q ? `No words match “${esc($("#search").value)}”${catFilter ? " in this category" : ""}.` : "No words in this category."}</li>`; return; }
+  list.innerHTML = words.map(w => {
+    const pips = [1,2,3,4,5].map(i => `<i class="${i <= (w.box||1) ? "on" : ""}"></i>`).join("");
+    const acc = w.seen ? `${Math.round(w.correct / w.seen * 100)}% of ${w.seen}` : "not tested yet";
+    const act = confirmId === w.id
+      ? `<div class="confirm"><span>Delete?</span><button class="btn small" data-w="yes">Delete</button><button class="btn small" data-w="no">Keep</button></div>`
+      : `<div class="wact"><button class="icon" data-w="edit" aria-label="Edit ${esc(w.de)}">${ICON_EDIT}</button><button class="icon" data-w="del" aria-label="Delete ${esc(w.de)}">${ICON_DEL}</button></div>`;
+    return `<li class="wrow" data-id="${w.id}">
+      <div class="wmain"><div class="wde">${deHTML(w)}${w.plural ? ` <span class="pl">· ${esc(w.plural)}</span>` : ""}${w.category === "verb" && principalParts(w) ? ` <span class="pl">· ${esc(principalParts(w))}</span>` : ""}${w.category ? `<span class="cat">${esc(catLabel(w.category))}</span>` : ""}</div>
+        <div class="wen">${esc(w.en)}${w.note ? ` · <i>${esc(w.note)}</i>` : ""}</div></div>
+      <div class="wmeta"><span class="pips" title="Box ${w.box||1} of 5">${pips}</span><span class="acc num">${acc}</span></div>
+      ${act}</li>`;
+  }).join("");
+}
+
+/* ---------- progress ---------- */
+function niceStep(max){ for (const s of [1,2,5,10,20,25,50,100,200,250,500,1000]) if (max / s <= 4) return s; return 1000; }
+
+function renderProgress(){
+  const key = testKey(prefs.stats), T = TESTS[key];
+  $("#statsSwitch").innerHTML = segHTML("stats", testGroup(key), TEST_OPTIONS) +
+    (T.tense ? segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l])) : "");
+  const total = h => Object.values(h).reduce((a, n) => a + (Number(n) || 0), 0);
+  const t = today(), days = [];
+  for (let i = 29; i >= 0; i--) {
+    const k = addDays(t, -i), h = S.history[k] || {};
+    days.push({ k, c: h[T.hc] || 0, w: h[T.hw] || 0, any: total(h) });
+  }
+  const sumC = days.reduce((a,d) => a + d.c, 0), sumW = days.reduce((a,d) => a + d.w, 0), rev = sumC + sumW;
+  const allRev = days.reduce((a,d) => a + d.any, 0);
+  // The streak counts practice in any of the tests.
+  let streak = 0, k = t;
+  const has = key => { const h = S.history[key]; return h && total(h) > 0; };
+  if (!has(k)) k = addDays(k, -1);
+  while (has(k)) { streak++; k = addDays(k, -1); }
+
+  const words = T.pool();
+  const mastered = words.filter(w => boxIn(w, T) >= 4).length;
+  $("#tiles").innerHTML = [
+    [streak, "day streak"],
+    [allRev, "answers in 30 days"],
+    [rev ? Math.round(sumC / rev * 100) + "%" : "–", T.accLabel],
+    [`${mastered}<span style="font-size:1rem;color:var(--muted)">/${words.length}</span>`, `${T.unit} in box 4 or 5`]
+  ].map(([v,l]) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`).join("");
+
+  // chart
+  $("#chartTitle").textContent = T.chartTitle;
+  const W=640, H=210, L=34, R=10, Tp=14, B=28, iw=W-L-R, ih=H-Tp-B;
+  const max = Math.max(4, ...days.map(d => d.c + d.w)), step = niceStep(max), top = Math.ceil(max/step)*step;
+  const y = v => Tp + ih - v / top * ih, bw = iw / days.length, bar = Math.max(4, bw * .68);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily answers over the last 30 days">`;
+  for (let v = 0; v <= top; v += step)
+    svg += `<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="11" font-family="Fira Mono, monospace" fill="var(--muted)">${v}</text>`;
+  days.forEach((d, i) => {
+    const x = L + i*bw + (bw - bar)/2;
+    const [yy, mm, dd] = d.k.split("-");
+    const tip = `${Number(dd)}.${Number(mm)}.: ${d.c} right, ${d.w} missed`;
+    if (d.c) svg += `<rect x="${x}" y="${y(d.c)}" width="${bar}" height="${y(0)-y(d.c)}" fill="var(--ok-fill)" rx="1.5"><title>${tip}</title></rect>`;
+    if (d.w) svg += `<rect x="${x}" y="${y(d.c+d.w)}" width="${bar}" height="${y(d.c)-y(d.c+d.w)}" fill="var(--miss-fill)" rx="1.5"><title>${tip}</title></rect>`;
+    if (!d.c && !d.w) svg += `<rect x="${x}" y="${y(0)-2}" width="${bar}" height="2" fill="var(--line)"><title>${tip}</title></rect>`;
+    if ((29 - i) % 7 === 0) svg += `<text x="${x + bar/2}" y="${H-8}" text-anchor="middle" font-size="11" font-family="Fira Mono, monospace" fill="var(--muted)">${i === 29 ? "today" : `${Number(dd)}.${Number(mm)}.`}</text>`;
+  });
+  svg += `</svg>`;
+  $("#chart").innerHTML = svg + (rev ? "" : `<p class="muted" style="font-size:.9rem;margin-top:8px">Your daily results will show up here after your first round of this test.</p>`);
+
+  // boxes
+  $("#boxesNote").textContent = T.boxesNote + (key === "vocab" ? "" : " Each test has its own boxes.");
+  const counts = [0,0,0,0,0,0]; words.forEach(w => counts[boxIn(w, T)]++);
+  const bmax = Math.max(1, ...counts);
+  $("#boxes").innerHTML = words.length ? [1,2,3,4,5].map(b =>
+    `<div class="boxrow"><span>${BOX_NAMES[b]}</span><div class="boxbar"><i style="width:${counts[b]/bmax*100}%"></i></div><span class="n">${counts[b]}</span></div>`).join("")
+    : `<p class="muted">Nothing here yet for this test.</p>`;
+
+  // tricky
+  $("#trickyTitle").textContent = T.trickyTitle;
+  const wrong = w => w[T.wrong] || 0, seen = w => w[T.seen] || 1;
+  const detail = w => key === "plural" ? (w.plural || "") : T.tense ? (principalParts(w) || w.en) : w.en;
+  const tricky = words.filter(w => wrong(w) > 0).sort((a,b) => (wrong(b)/seen(b) - wrong(a)/seen(a)) || (wrong(b) - wrong(a))).slice(0, 6);
+  $("#tricky").innerHTML = tricky.length ? tricky.map(w =>
+    `<li><span>${deHTML(w)} <span class="muted">· ${esc(detail(w))}</span></span><span class="acc num">missed ${wrong(w)} of ${seen(w)}</span></li>`).join("")
+    : `<li><span class="muted">No misses yet. Anything you miss in this test will collect here.</span></li>`;
+}
+
+/* ---------- render ---------- */
+function updateCounts(){ $("#wordCount").textContent = S.words.size ? String(S.words.size) : ""; }
+function renderAll(){
+  updateCounts();
+  $("#notice").hidden = !(S.ready && !S.persistent);
+  if (!session) { $("#practiceIdle").hidden = false; $("#practiceSession").hidden = true; renderIdle(); }
+  renderWords(); renderProgress();
+}
+
+setTab(["practice","words","progress"].includes(prefs.tab) ? prefs.tab : "practice");
+renderAll();
+initStore();
+})();
+</script>
+</body>
+</html>
