@@ -807,7 +807,7 @@ function renderCard(){
       : `<div class="actions"><button class="btn miss" data-act="missed">Didn’t know <span class="kbd">1</span></button><button class="btn ok" data-act="knew">Knew it <span class="kbd">2</span></button></div>`;
   } else {
     controls = typing
-      ? `<div class="typebox"><input id="typed" placeholder="${c.dir === "de-en" ? "Type the English" : "Type the German, with article"}" autocomplete="off" autocapitalize="off" spellcheck="false">
+      ? `<div class="typebox"><input id="typed" placeholder="${c.dir === "de-en" ? "Type the English" : w.article ? "Type the German, with article" : "Type the German"}" autocomplete="off" autocapitalize="off" spellcheck="false">
           ${c.dir === "en-de" ? umlautButtons() : ""}
           <div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div></div>`
       : `<div class="row" style="justify-content:center"><button class="btn primary" data-act="reveal" id="revealBtn">Show answer <span class="kbd">Space</span></button></div>`;
@@ -880,7 +880,8 @@ function pickArticle(a){
   c.picked = a; c.ok = a === w.article; c.revealed = true;
   renderArticleCard();
   // A right answer moves on by itself; a wrong one waits so the answer can sink in.
-  if (c.ok) setTimeout(() => { if (session && session.cur === c) answer(true); }, 900);
+  // Mixed rounds always wait for Enter, like their other cards.
+  if (c.ok && session.test !== "mixed") setTimeout(() => { if (session && session.cur === c) answer(true); }, 900);
 }
 
 /* ---------- plural test ---------- */
@@ -1038,8 +1039,15 @@ function checkAnswer(w, dir, input){
     const alts = w.en.split(/[,/;]/).map(stripEn).filter(Boolean);
     return { ok: alts.includes(stripEn(input)) };
   }
-  const exp = deFold((w.article ? w.article + " " : "") + w.de), got = deFold(input);
+  const full = x => (x.article ? x.article + " " : "") + x.de;
+  const exp = deFold(full(w)), got = deFold(input);
   if (got === exp) return { ok:true };
+  // Another word with the same English meaning counts too (tourist: der Tourist / die Touristin).
+  const meanings = new Set(w.en.split(/[,/;]/).map(stripEn).filter(Boolean));
+  for (const o of S.words.values()) {
+    if (o === w || deFold(full(o)) !== got) continue;
+    if (o.en.split(/[,/;]/).map(stripEn).some(m => meanings.has(m))) return { ok:true, msg:`This card was ${full(w)}.` };
+  }
   if (w.article) {
     if (got === deFold(w.de)) return { ok:false, msg:`Right word, but nouns need their article: ${w.article} ${w.de}.` };
     const m = got.match(/^(der|die|das) (.+)$/);
