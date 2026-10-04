@@ -334,7 +334,7 @@ const INTERVALS = [0,0,1,3,7,16];           // days until next review, by box
 const BOX_NAMES = ["", "Box 1 · every day", "Box 2 · next day", "Box 3 · 3 days", "Box 4 · 1 week", "Box 5 · 16 days"];
 
 /* ---------- preferences (per browser) ---------- */
-const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab", stats:"vocab", tense:"präsens", cjmode:"all" };
+const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab", stats:"vocab", tense:"präsens", cjmode:"all", mixParts:null };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("wz-prefs") || "{}")); } catch(e){}
 const savePrefs = () => { try { localStorage.setItem("wz-prefs", JSON.stringify(prefs)); } catch(e){} };
 
@@ -543,7 +543,9 @@ function renderIdle(){
       </div></div></div>`;
     return;
   }
-  const key = currentTest(), T = TESTS[key];
+  const key = currentTest();
+  if (key === "mixed") { renderMixedIdle(el); return; }
+  const T = TESTS[key];
   const pool = T.pool(), due = pool.filter(w => isDue(w, T)).length;
   const fetching = T.tense ? [...S.words.values()].filter(w => w.category === "verb" && !w.forms).length : 0;
   const fetchNote = fetching ? `<p class="muted" style="font-size:.9rem">Getting the forms of ${fetching} more verb${fetching === 1 ? "" : "s"} from Wiktionary…</p>` : "";
@@ -567,13 +569,47 @@ function renderIdle(){
     </div>${fetchNote}`;
   }
   el.innerHTML = `<div class="panel">
-    <div class="opt"><span class="label">Test</span>${segHTML("test", testGroup(key), TEST_OPTIONS)}</div>
+    <div class="opt"><span class="label">Test</span>${segHTML("test", testGroup(key), PRACTICE_OPTIONS)}</div>
     ${body}</div>`;
+}
+
+function renderMixedIdle(el){
+  const on = mixParts();
+  const due = mixCandidates(false), all = mixCandidates(true);
+  const dueEach = mixCandidates(false, MIX_PARTS.map(([k]) => k)).counts;   // shown on every chip, on or off
+  const nDue = due.byWord.size;
+  const chips = MIX_PARTS.map(([k, label]) => {
+    const pressed = on.includes(k), n = dueEach[k] || 0;
+    return `<button type="button" data-mix="${k}" aria-pressed="${pressed}">${label}<span class="n">${n}</span></button>`;
+  }).join("");
+  const anyVerbs = on.some(k => k.startsWith("verbs_")), anyVocab = on.includes("vocab");
+  el.innerHTML = `<div class="panel">
+    <div class="opt"><span class="label">Test</span>${segHTML("test", "mixed", PRACTICE_OPTIONS)}</div>
+    <div class="due"><span class="big num">${nDue}</span><span>${nDue === 1 ? "word has" : "words have"} something due <span class="muted">· across ${on.length} test${on.length === 1 ? "" : "s"}</span></span></div>
+    <div class="opt"><span class="label">Include</span><div class="catfilter mixparts" role="group" aria-label="Tests to include">${chips}</div>
+      <span class="hint" style="text-align:left">The numbers are what’s due in each test. Answers count toward each test’s own statistics.</span></div>
+    <div class="opts">
+      ${anyVocab ? `<div class="opt"><span class="label">Vocabulary direction</span>${segHTML("dir", prefs.dir, [["de-en","DE → EN"],["en-de","EN → DE"],["mix","Mixed"]])}</div>
+      <div class="opt"><span class="label">Vocabulary answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
+      ${anyVerbs ? `<div class="opt"><span class="label">Verbs: ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
+      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[0,"All"]])}</div>
+    </div>
+    <div class="row">
+      ${nDue ? `<button class="btn primary" data-act="start">Start practice</button>`
+             : all.byWord.size ? `<button class="btn primary" data-act="extra">Practice anyway</button><span class="muted" style="font-size:.9rem">Nothing is due in these tests. Extra rounds still count toward your stats.</span>`
+             : `<span class="muted">None of your words can be practised in the selected tests yet.</span>`}
+    </div></div>`;
 }
 
 document.addEventListener("click", e => {
   const p = e.target.closest("[data-pref]");
   if (p) { const v = p.dataset.val; prefs[p.dataset.pref] = p.dataset.pref === "size" ? Number(v) : v; savePrefs(); renderIdle(); renderProgress(); return; }
+  const mx = e.target.closest("[data-mix]");
+  if (mx) {
+    const on = new Set(mixParts()), k = mx.dataset.mix;
+    if (on.has(k)) { if (on.size > 1) on.delete(k); } else on.add(k);   // keep at least one
+    prefs.mixParts = MIX_PARTS.map(([key]) => key).filter(key => on.has(key)); savePrefs(); renderIdle(); return;
+  }
   const a = e.target.closest("[data-act]"); if (!a) return;
   const act = a.dataset.act;
   if (act === "goWords") { setTab("words"); $("#qWord").focus(); }
@@ -592,7 +628,7 @@ document.addEventListener("click", e => {
   else if (act === "override") answer(true);
   else if (act === "art") pickArticle(a.dataset.a);
   else if (act === "quit") endSession();
-  else if (act === "retry") startSession(false, session.missedIds);
+  else if (act === "retry") startSession(false, session.missed);
   else if (act === "done") { session = null; renderAll(); }
   else if (act === "uml") { const i = (lastInput && document.body.contains(lastInput) && !lastInput.disabled) ? lastInput : $("#typed"); if (i) { const s=i.selectionStart ?? i.value.length; i.value = i.value.slice(0,s)+a.dataset.ch+i.value.slice(i.selectionEnd ?? s); i.focus(); i.setSelectionRange(s+1,s+1); } }
 });
@@ -654,19 +690,54 @@ const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plur
 const tenseKey = () => TENSES.some(t => t[0] === prefs.tense) ? prefs.tense : "präsens";
 const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : TESTS[name] ? name : "vocab";
 const testGroup = key => key.startsWith("verbs_") ? "verbs" : key;
-const currentTest = () => testKey(prefs.test);
+const currentTest = () => prefs.test === "mixed" ? "mixed" : testKey(prefs.test);
+const PRACTICE_OPTIONS = TEST_OPTIONS.concat([["mixed","Mixed"]]);
+
+/* ---------- mixed test: due cards from every test in one round ----------
+   Each card is still scored in its own test (boxes, history), so a mixed round
+   is just another way through what's due. A word appears at most once per round,
+   so "der Hund" in one card can't give away "der, die oder das: Hund" in the next. */
+const MIX_PARTS = [["vocab","Vocabulary"],["articles","Articles"],["plural","Plurals"],
+                   ["verbs_präsens","Präsens"],["verbs_präteritum","Präteritum"],["verbs_perfekt","Perfekt"]];
+const mixParts = () => {
+  const on = Array.isArray(prefs.mixParts) ? prefs.mixParts.filter(k => TESTS[k]) : [];
+  return on.length ? on : MIX_PARTS.map(([k]) => k);
+};
+// For each word: the included tests it can be practised in (only the due ones unless `extra`).
+function mixCandidates(extra, parts = mixParts()){
+  const byWord = new Map(), counts = {};
+  for (const key of parts) {
+    const T = TESTS[key];
+    for (const w of T.pool()) {
+      if (!extra && !isDue(w, T)) continue;
+      counts[key] = (counts[key] || 0) + 1;
+      if (!byWord.has(w.id)) byWord.set(w.id, []);
+      byWord.get(w.id).push(key);
+    }
+  }
+  return { byWord, counts };
+}
 const boxIn = (w, T) => w[T.box] || 1;
 const isDue = (w, T) => (w[T.due] || "") <= today();
 
-function startSession(extra, onlyIds){
-  const key = currentTest(), T = TESTS[key];
-  let pool;
-  if (onlyIds) pool = onlyIds.map(id => S.words.get(id)).filter(Boolean);
-  else pool = extra ? T.pool() : T.pool().filter(w => isDue(w, T));
-  pool = shuffle(pool.slice()).sort((a,b) => boxIn(a, T) - boxIn(b, T));
-  if (!onlyIds && prefs.size) pool = pool.slice(0, prefs.size);
-  if (!pool.length) return;
-  session = { test:key, queue: pool.map(w => ({ id:w.id, again:false })), total:pool.length, done:0, knew:0, missedIds:[], cur:null, finished:false };
+// `only`: a list of {id, test} cards to go over again (the "Practice these again" button).
+function startSession(extra, only){
+  const key = currentTest();
+  let cards;
+  if (only) cards = only.filter(c => S.words.has(c.id) && TESTS[c.test]);
+  else if (key === "mixed") {
+    // One card per word: a random one of the tests it's due in.
+    const { byWord } = mixCandidates(extra);
+    cards = [...byWord].map(([id, tests]) => ({ id, test: tests[Math.floor(Math.random() * tests.length)] }));
+  } else {
+    const T = TESTS[key];
+    cards = (extra ? T.pool() : T.pool().filter(w => isDue(w, T))).map(w => ({ id: w.id, test: key }));
+  }
+  const boxOf = c => boxIn(S.words.get(c.id), TESTS[c.test]);
+  cards = shuffle(cards).sort((a, b) => boxOf(a) - boxOf(b));
+  if (!only && prefs.size) cards = cards.slice(0, prefs.size);
+  if (!cards.length) return;
+  session = { test:key, queue: cards.map(c => ({ ...c, again:false })), total:cards.length, done:0, knew:0, missed:[], cur:null, finished:false };
   $("#practiceIdle").hidden = true; $("#practiceSession").hidden = false;
   nextCard();
 }
@@ -697,9 +768,10 @@ function sessionHeader(s, label, box, again){
 const umlautButtons = () => `<div class="umlauts">${["ä","ö","ü","ß"].map(ch => `<button type="button" data-act="uml" data-ch="${ch}">${ch}</button>`).join("")}</div>`;
 
 function renderCard(){
-  if (session.test === "articles") { renderArticleCard(); return; }
-  if (session.test === "plural") { renderPluralCard(); return; }
-  if (session.test.startsWith("verbs_")) { renderVerbCard(); return; }
+  const kind = session.cur.test;
+  if (kind === "articles") { renderArticleCard(); return; }
+  if (kind === "plural") { renderPluralCard(); return; }
+  if (kind.startsWith("verbs_")) { renderVerbCard(); return; }
   const s = session, c = s.cur, w = S.words.get(c.id);
   const front = c.dir === "de-en" ? `<span class="word">${deHTML(w)}</span>` : `<span class="word">${esc(w.en)}</span>`;
   const back = c.dir === "de-en" ? `<span class="word">${esc(w.en)}</span>` : `<span class="word">${deHTML(w)}</span>`;
@@ -782,7 +854,7 @@ function renderArticleCard(){
 
 function pickArticle(a){
   const c = session && session.cur;
-  if (!c || c.revealed || session.test !== "articles") return;
+  if (!c || c.revealed || c.test !== "articles") return;
   const w = S.words.get(c.id);
   c.picked = a; c.ok = a === w.article; c.revealed = true;
   renderArticleCard();
@@ -878,7 +950,7 @@ function checkVerbForm(cell, typed, person){
 }
 
 function renderVerbCard(){
-  const s = session, c = s.cur, w = S.words.get(c.id), T = TESTS[s.test];
+  const s = session, c = s.cur, w = S.words.get(c.id), T = TESTS[c.test];
   const cells = w.forms[T.tense];
   const h = sessionHeader(s, `${T.label} · conjugate`, w[T.box] || 1, c.again);
   c.typedAll = c.typedAll || ["", "", "", "", "", ""];
@@ -924,7 +996,7 @@ function renderVerbCard(){
 
 function checkVerbCard(){
   const c = session.cur; if (!c || c.revealed) return;
-  const w = S.words.get(c.id), T = TESTS[session.test], cells = w.forms[T.tense];
+  const w = S.words.get(c.id), T = TESTS[c.test], cells = w.forms[T.tense];
   c.rows = [];
   for (const i of c.persons) {
     c.typedAll[i] = ($("#cj" + i) || {}).value || "";
@@ -955,9 +1027,9 @@ function checkAnswer(w, dir, input){
   return { ok:false };
 }
 function checkTyped(){
-  if (session.test.startsWith("verbs_")) { checkVerbCard(); return; }
+  if (session.cur.test.startsWith("verbs_")) { checkVerbCard(); return; }
   const c = session.cur, w = S.words.get(c.id), typed = $("#typed").value;
-  const r = session.test === "plural" ? checkPlural(w, typed) : checkAnswer(w, c.dir, typed);
+  const r = c.test === "plural" ? checkPlural(w, typed) : checkAnswer(w, c.dir, typed);
   c.ok = r.ok; c.msg = r.msg || ""; c.typed = typed.trim(); c.revealed = true; renderCard();
 }
 
@@ -965,10 +1037,10 @@ function answer(ok){
   const s = session, c = s.cur; if (!c || !c.revealed || c.answered) return;
   c.answered = true;
   if (!c.again) {
-    const T = TESTS[s.test], w = { ...S.words.get(c.id) }, t = today();
+    const T = TESTS[c.test], w = { ...S.words.get(c.id) }, t = today();
     const h = S.history[t] || (S.history[t] = { c:0, w:0 });
     w[T.seen] = (w[T.seen] || 0) + 1;
-    if (s.test === "vocab") w.last = new Date().toISOString();
+    if (c.test === "vocab") w.last = new Date().toISOString();
     if (ok) {
       w[T.correct] = (w[T.correct] || 0) + 1;
       // Extra practice on a word that isn't due doesn't move it up a box.
@@ -981,42 +1053,48 @@ function answer(ok){
     saveProgress(w); saveHistory();
     s.done++;
     if (ok) s.knew++;
-    else { s.missedIds.push(c.id); s.queue.push({ id:c.id, again:true }); s.total++; }
+    else { s.missed.push({ id:c.id, test:c.test }); s.queue.push({ id:c.id, test:c.test, again:true }); s.total++; }
   } else { s.done++; }
   updateCounts();
   nextCard();
 }
 
 function finishSession(){
-  const s = session, T = TESTS[s.test]; s.finished = true;
-  const graded = s.knew + s.missedIds.length;
-  const missed = s.missedIds.map(id => S.words.get(id)).filter(Boolean);
-  const detail = w => s.test === "articles" ? (genderTip(w) || w.en) : s.test === "plural" ? (w.plural || "") : T.tense ? principalParts(w) || w.en : w.en;
+  const s = session, mixed = s.test === "mixed", T = mixed ? MIXED_TEXT : TESTS[s.test]; s.finished = true;
+  const graded = s.knew + s.missed.length;
+  const missed = s.missed.filter(m => S.words.has(m.id));
+  const partLabel = test => (MIX_PARTS.find(([k]) => k === test) || [, ""])[1];
+  const detail = ({ id, test }) => {
+    const w = S.words.get(id);
+    const d = test === "articles" ? (genderTip(w) || w.en) : test === "plural" ? (w.plural || "") : TESTS[test].tense ? principalParts(w) || w.en : w.en;
+    return mixed ? `${partLabel(test)} · ${d}` : d;
+  };
   $("#practiceSession").innerHTML = `<div class="panel">
     <span class="label">Round complete</span>
     <div class="due"><span class="big num">${s.knew}/${graded}</span><span>${T.doneText}</span></div>
-    ${missed.length ? `<div class="stack"><h3>Worth another look</h3><ul class="missed">${missed.map(w =>
-      `<li><span>${deHTML(w)}</span><span class="muted">${esc(detail(w))}</span></li>`).join("")}</ul></div>`
+    ${missed.length ? `<div class="stack"><h3>Worth another look</h3><ul class="missed">${missed.map(m =>
+      `<li><span>${deHTML(S.words.get(m.id))}</span><span class="muted">${esc(detail(m))}</span></li>`).join("")}</ul></div>`
       : `<p>${T.allText} Sehr gut!</p>`}
     <div class="row">
       ${missed.length ? `<button class="btn primary" data-act="retry">Practice these ${missed.length} again</button>` : ""}
       <button class="btn ${missed.length ? "" : "primary"}" data-act="done">Done</button>
     </div></div>`;
 }
-function endSession(){ if (!session) return; if (session.knew + session.missedIds.length) finishSession(); else { session = null; renderAll(); } }
+const MIXED_TEXT = { doneText:"right on the first try", allText:"Everything right on the first try." };
+function endSession(){ if (!session) return; if (session.knew + session.missed.length) finishSession(); else { session = null; renderAll(); } }
 
 document.addEventListener("keydown", e => {
   if (!session || session.finished || prefs.tab !== "practice") return;
   const c = session.cur; if (!c) return;
   const inInput = e.target.matches("input,textarea,select");
-  if (session.test === "articles") {
+  if (c.test === "articles") {
     if (inInput) return;
     const i = ["1","2","3"].indexOf(e.key);
     if (!c.revealed && i >= 0) { e.preventDefault(); pickArticle(ARTS[i]); }
     else if (c.revealed && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); answer(c.ok); }
     return;
   }
-  if (session.test.startsWith("verbs_")) {
+  if (c.test.startsWith("verbs_")) {
     if (e.key !== "Enter") return;
     e.preventDefault();
     if (c.revealed) { answer(c.ok); return; }
@@ -1024,7 +1102,7 @@ document.addEventListener("keydown", e => {
     if (i >= 0 && i < inputs.length - 1) inputs[i + 1].focus(); else checkVerbCard();
     return;
   }
-  if (session.test === "plural" || prefs.mode === "type") {
+  if (c.test === "plural" || prefs.mode === "type") {
     if (e.key === "Enter") { e.preventDefault(); if (!c.revealed) { if (inInput) checkTyped(); } else answer(c.ok); }
     return;
   }
