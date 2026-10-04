@@ -64,6 +64,18 @@ Everyone shares one word list and has their own progress. Each person runs the a
 
 Earlier versions kept everything in one `words.json`, then in `vocabulary.json` + `progress.json`. The server upgrades both automatically and keeps the originals.
 
+## Logo
+
+`assets/logo.svg` is the logo: three flashcards in the der / die / das colours (Nord blue, red and green) with a W on the front card, on a Polar Night tile laid out on the macOS icon grid. The page uses the same drawing for its header and browser-tab icon (inlined in `index.html`, cropped without the icon margin). `assets/wortschatz.png` (1024 px) and `assets/wortschatz.icns` are exports of it.
+
+To use it as the icon of the shared iCloud folder, run this once in Terminal (adjust the paths if yours differ):
+
+```sh
+osascript -l JavaScript -e 'ObjC.import("AppKit"); $.NSWorkspace.sharedWorkspace.setIconForFileOptions($.NSImage.alloc.initWithContentsOfFile("/Users/sg/dev/wortschatz/assets/wortschatz.icns"), "/Users/sg/Library/Mobile Documents/com~apple~CloudDocs/Wortschatz", 0)'
+```
+
+It prints `true` when it worked. Or by hand: select the folder in Finder, **File → Get Info**, and drag `wortschatz.icns` onto the small icon at the top left of the Info window. Custom folder icons are stored on the folder itself and don't always sync through iCloud, so the other person may need to do the same on their Mac.
+
 ## Adding words
 
 Type just the German word (no article) and press Enter. The server fetches the entry from the German Wiktionary and reads the gender (`|Genus=`), the plural (`|Nominativ Plural=`) and the English translations for each numbered meaning. Every distinct meaning becomes its own result (das Land: land / country / soil; die Bank: bench / bank), with Wiktionary's German definition underneath. Meanings whose main English word repeats an earlier one are folded together. The first four show right away; the rest are behind "Show more meanings". Press Enter again to add the top result, or pick another. The German definition is saved as the word's note, so cards for the same word with different meanings can be told apart.

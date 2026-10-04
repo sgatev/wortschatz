@@ -6,6 +6,7 @@
 <title>Wortschatz</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22100 100 824 824%22%3E%3Cdefs%3E%0A%3ClinearGradient id=%22bg%22 x1=%220%22 y1=%220%22 x2=%220%22 y2=%221%22%3E%0A%3Cstop offset=%220%22 stop-color=%22%23434C5E%22/%3E%0A%3Cstop offset=%221%22 stop-color=%22%232E3440%22/%3E%0A%3C/linearGradient%3E%0A%3Cfilter id=%22lift%22 x=%22-30%25%22 y=%22-30%25%22 width=%22160%25%22 height=%22160%25%22%3E%0A%3CfeDropShadow dx=%220%22 dy=%2214%22 stdDeviation=%2216%22 flood-color=%22%231C2028%22 flood-opacity=%220.45%22/%3E%0A%3C/filter%3E%0A%3C/defs%3E%0A%3Crect x=%22100%22 y=%22100%22 width=%22824%22 height=%22824%22 rx=%22184%22 fill=%22url%28%23bg%29%22/%3E%0A%3Crect x=%22101.5%22 y=%22101.5%22 width=%22821%22 height=%22821%22 rx=%22182.5%22 fill=%22none%22 stroke=%22%23ECEFF4%22 stroke-opacity=%220.07%22 stroke-width=%223%22/%3E%0A%3Cg transform=%22translate%28-18 0%29%22%3E%0A%3Crect x=%22352%22 y=%22262%22 width=%22320%22 height=%22420%22 rx=%2242%22 fill=%22%23BF616A%22 transform=%22rotate%28-17 512 820%29%22 filter=%22url%28%23lift%29%22/%3E%0A%3Crect x=%22352%22 y=%22262%22 width=%22320%22 height=%22420%22 rx=%2242%22 fill=%22%23A3BE8C%22 transform=%22rotate%28-6 512 820%29%22 filter=%22url%28%23lift%29%22/%3E%0A%3Cg transform=%22rotate%286 512 820%29%22 filter=%22url%28%23lift%29%22%3E%0A%3Crect x=%22352%22 y=%22262%22 width=%22320%22 height=%22420%22 rx=%2242%22 fill=%22%23ECEFF4%22/%3E%0A%3Cpolyline points=%22413,372 465,560 512,438 559,560 611,372%22 fill=%22none%22 stroke=%22%235E81AC%22 stroke-width=%2248%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%0A%3Crect x=%22430%22 y=%22612%22 width=%22164%22 height=%2218%22 rx=%229%22 fill=%22%23D8DEE9%22/%3E%0A%3C/g%3E%0A%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Mono:wght@400;500&family=Fira+Sans+Condensed:wght@600;700;800&family=Fira+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: one narrow working column; a header with tabs, then one view at a time. The flashcard is the hero. */
@@ -58,7 +59,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* header */
 .top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}
 .brand{display:flex;align-items:center;gap:12px}
-.mark{width:40px;height:40px;border-radius:9px;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-family:var(--f-display);font-weight:800;font-size:1.35rem}
+.mark{width:44px;height:44px;display:block;flex:none}
 .brand h1{font-size:1.7rem;font-weight:800;line-height:1}
 .brand p{font-size:.85rem;color:var(--muted)}
 .tabs{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:10px}
@@ -231,7 +232,26 @@ details[open] summary{margin-bottom:10px}
 <div class="app">
   <header class="top">
     <div class="brand">
-      <div class="mark" aria-hidden="true">W</div>
+      <svg class="mark" viewBox="100 100 824 824" aria-hidden="true"><defs>
+<linearGradient id="wz-bg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#434C5E"/>
+<stop offset="1" stop-color="#2E3440"/>
+</linearGradient>
+<filter id="wz-lift" x="-30%" y="-30%" width="160%" height="160%">
+<feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#1C2028" flood-opacity="0.45"/>
+</filter>
+</defs>
+<rect x="100" y="100" width="824" height="824" rx="184" fill="url(#wz-bg)"/>
+<rect x="101.5" y="101.5" width="821" height="821" rx="182.5" fill="none" stroke="#ECEFF4" stroke-opacity="0.07" stroke-width="3"/>
+<g transform="translate(-18 0)">
+<rect x="352" y="262" width="320" height="420" rx="42" fill="#BF616A" transform="rotate(-17 512 820)" filter="url(#wz-lift)"/>
+<rect x="352" y="262" width="320" height="420" rx="42" fill="#A3BE8C" transform="rotate(-6 512 820)" filter="url(#wz-lift)"/>
+<g transform="rotate(6 512 820)" filter="url(#wz-lift)">
+<rect x="352" y="262" width="320" height="420" rx="42" fill="#ECEFF4"/>
+<polyline points="413,372 465,560 512,438 559,560 611,372" fill="none" stroke="#5E81AC" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="430" y="612" width="164" height="18" rx="9" fill="#D8DEE9"/>
+</g>
+</g></svg>
       <div><h1>Wortschatz</h1><p>Your German vocabulary trainer</p></div>
     </div>
     <nav class="tabs" role="tablist">
