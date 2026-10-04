@@ -1114,6 +1114,8 @@ function endSession(){ if (!session) return; if (session.knew + session.missed.l
 
 document.addEventListener("keydown", e => {
   if (!session || session.finished || prefs.tab !== "practice") return;
+  // A held key would answer the card it revealed, and then the next one.
+  if (e.repeat) { if (["Enter"," ","1","2","3"].includes(e.key)) e.preventDefault(); return; }
   const c = session.cur; if (!c) return;
   const inInput = e.target.matches("input,textarea,select");
   if (c.test === "articles") {
@@ -1327,7 +1329,7 @@ function renderWords(){
   if (!words.length) { list.innerHTML = `<li class="empty muted">${q ? `No words match “${esc($("#search").value)}”${catFilter ? " in this category" : ""}.` : "No words in this category."}</li>`; return; }
   list.innerHTML = words.map(w => {
     const pips = [1,2,3,4,5].map(i => `<i class="${i <= (w.box||1) ? "on" : ""}"></i>`).join("");
-    const acc = w.seen ? `${Math.round(w.correct / w.seen * 100)}% of ${w.seen}` : "not tested yet";
+    const acc = w.seen ? `${Math.round((w.correct || 0) / w.seen * 100)}% of ${w.seen}` : "not tested yet";
     const act = confirmId === w.id
       ? `<div class="confirm"><span>Delete?</span><button class="btn small" data-w="yes">Delete</button><button class="btn small" data-w="no">Keep</button></div>`
       : `<div class="wact"><button class="icon" data-w="edit" aria-label="Edit ${esc(w.de)}">${ICON_EDIT}</button><button class="icon" data-w="del" aria-label="Delete ${esc(w.de)}">${ICON_DEL}</button></div>`;
