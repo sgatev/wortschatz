@@ -14,20 +14,55 @@ Then open http://localhost:4747. Use `PORT=5000 node server.js` for another port
 ## Files
 
 - `index.html` — the whole app (page, styles, script).
-- `server.js` — serves the page and reads/writes the word list.
-- `lookup.js` — looks up a German word on [de.wiktionary.org](https://de.wiktionary.org) and returns its article, plural and English meaning.
-- `vocabulary.json` — the words: German, article, plural, English, category and note. Nothing about how you're doing, so it's the file to share.
-- `progress.json` — your boxes, due dates, right/wrong counts per test, and daily history.
+- `server.js` — serves the page and reads/writes the data.
+- `lookup.js` — looks up a German word on [de.wiktionary.org](https://de.wiktionary.org): article, plural, English meaning, category and verb forms.
+- `config.json` — this computer's settings (data folder and your name), written when you use `--data` or `--user`. Not shared.
 
-Both are plain JSON, created on the first save. Stop the server before editing them by hand.
+The data lives in a folder of its own: next to the code by default, or anywhere you point it (such as a shared iCloud folder):
 
-## Sharing and starting over
+- `vocabulary.json` — the words: German, article, plural, English, category, verb forms and note. Shared by everyone who uses the folder.
+- `progress-<name>.json` — one person's boxes, due dates, right/wrong counts per test, and daily history. Everyone has their own.
 
-- **Share your vocabulary:** send `vocabulary.json`. The other person puts it in their own `wortschatz` folder (with the server stopped) and starts fresh, since they have no `progress.json` yet.
-- **Erase your statistics:** stop the server, delete (or rename) `progress.json`, and start it again. Your words stay; every word is new and due again in all three tests.
-- Practising only ever rewrites `progress.json`; adding, editing or deleting a word rewrites `vocabulary.json` (and drops that word's progress on delete). So `vocabulary.json` works well under version control.
+Both are plain JSON. Stop the server before editing them by hand.
 
-Earlier versions kept everything in one `words.json`. On its first start the server splits that file into the two above and keeps the original as `words.json.bak`.
+## Sharing the words through iCloud
+
+Everyone shares one word list and has their own progress. Each person runs the app on their own Mac.
+
+**You (first time):**
+
+1. Create a folder in iCloud Drive, e.g. *Wortschatz*.
+2. Point the server at it, once:
+   ```sh
+   cd ~/dev/wortschatz
+   node server.js --data ~/Library/Mobile\ Documents/com~apple~CloudDocs/Wortschatz
+   ```
+   On the first start it copies your words into the folder as `vocabulary.json`, and your progress as `progress-<your login name>.json`. The originals stay in `~/dev/wortschatz` as a backup. The folder is remembered in `config.json`, so from then on plain `node server.js` uses it.
+3. In Finder, right-click the folder → **Share** → **Share Folder…**, choose collaboration, and invite the other person with **Can make changes**.
+
+**The other person:**
+
+1. Accept the invitation. The folder appears in their iCloud Drive.
+2. Get a copy of the app (`index.html`, `server.js`, `lookup.js`) into a folder of their own, then:
+   ```sh
+   node server.js --data ~/Library/Mobile\ Documents/com~apple~CloudDocs/Wortschatz --user anna
+   ```
+   `--user` names their progress file (`progress-anna.json`); without it, their login name is used.
+
+**How the two stay in step:**
+
+- Practising only writes your own `progress-<name>.json`; the shared `vocabulary.json` changes only when someone adds, edits or deletes a word.
+- The server re-reads `vocabulary.json` whenever iCloud updates it and writes back only the word that changed, so two people adding words at the same time don't overwrite each other. If a save does get overwritten in a race, the server notices within seconds and writes the missing word back.
+- Each word records when it was last changed, and deleted words leave a short note (kept for 180 days) so an old copy can't bring them back. When two Macs save at the same moment, iCloud may create `vocabulary 2.json`; the server merges such copies, keeping the newest version of each word, and removes them.
+- Words the other person adds show up in your open page within about 20 seconds (and right away when you switch back to the tab), with a short notice. It never refreshes in the middle of a practice round.
+- With *Optimize Mac Storage* on, iCloud may keep only a placeholder of the file; the server asks iCloud to download it before reading.
+
+## Starting over
+
+- **Erase your statistics:** stop the server, delete (or rename) your `progress-<name>.json`, and start it again. The words stay; every word is new and due again in every test. Other people's progress isn't affected.
+- **Go back to a local folder:** `node server.js --data ~/dev/wortschatz` (or delete `config.json`).
+
+Earlier versions kept everything in one `words.json`, then in `vocabulary.json` + `progress.json`. The server upgrades both automatically and keeps the originals.
 
 ## Adding words
 
@@ -83,7 +118,7 @@ A verb also carries its conjugation, one entry per person (ich, du, er/sie/es, w
 
 You can correct a form by editing `vocabulary.json` (server stopped). `"forms": {}` means Wiktionary had no forms for that verb.
 
-`progress.json` (keyed by the same word ids):
+`progress-<name>.json` (keyed by the same word ids):
 
 ```json
 {
@@ -99,4 +134,6 @@ You can correct a form by editing `vocabulary.json` (server stopped). `"forms": 
 }
 ```
 
-`history.days` holds how many answers you got right and wrong each day: `c`/`w` for vocabulary, `ac`/`aw` for articles, `pc`/`pw` for plurals, and `vpc`/`vpw`, `vtc`/`vtw`, `vkc`/`vkw` for verbs in Präsens, Präteritum and Perfekt. The unprefixed fields on a word are its vocabulary-test box, due date and counts; `art*`, `pl*`, `vp*`, `vt*` and `vk*` are the same for the article, plural and the three verb tests. A word with no entry in `progress.json` is simply new in every test. Progress for an id that isn't in `vocabulary.json` is ignored.
+`history.days` holds how many answers you got right and wrong each day: `c`/`w` for vocabulary, `ac`/`aw` for articles, `pc`/`pw` for plurals, and `vpc`/`vpw`, `vtc`/`vtw`, `vkc`/`vkw` for verbs in Präsens, Präteritum and Perfekt. The unprefixed fields on a word are its vocabulary-test box, due date and counts; `art*`, `pl*`, `vp*`, `vt*` and `vk*` are the same for the article, plural and the three verb tests. A word with no entry in your progress file is simply new in every test. Progress for an id that isn't in `vocabulary.json` is kept but not shown.
+
+In `vocabulary.json`, the server adds `"updated"` to each word (when it was last changed) and a `"deleted"` list of recently removed word ids with the time they were removed; these let two people's copies be merged safely.

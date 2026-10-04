@@ -338,8 +338,8 @@ const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab",
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("wz-prefs") || "{}")); } catch(e){}
 const savePrefs = () => { try { localStorage.setItem("wz-prefs", JSON.stringify(prefs)); } catch(e){} };
 
-/* ---------- store: the local server keeps everything in words.json ---------- */
-const S = { words:new Map(), history:{}, ready:false, persistent:false };
+/* ---------- store: the local server keeps the shared vocabulary and your own progress ---------- */
+const S = { words:new Map(), history:{}, ready:false, persistent:false, rev:0, inflight:0 };
 const queues = {};
 
 function toast(msg){
@@ -358,34 +358,76 @@ async function api(method, path, body){
 }
 
 // One write at a time per document; each write sends the latest state when it runs.
+// A write tells us the vocabulary revision before and after it; if nothing else changed
+// in between, we already have the latest words and don't need to reload them.
 function persist(key, run){
   if (!S.persistent) return;
+  S.inflight++;
   queues[key] = (queues[key] || Promise.resolve())
     .then(run)
-    .catch(() => toast("Couldn’t save to words.json. Is the server still running?"));
+    .then(r => { if (r && r.before === S.rev) S.rev = r.after; })
+    .catch(() => toast("Couldn’t save. Is the server still running?"))
+    .finally(() => { S.inflight--; });
 }
 
 function wordData(w){ const { id, ...rest } = w; return rest; }
+const wordUrl = id => "/api/words/" + encodeURIComponent(id);
+// Adding or editing a word (shared list + your progress for it).
 function saveWord(w){
   S.words.set(w.id, w);
-  persist(w.id, () => S.words.has(w.id)
-    ? api("PUT", "/api/words/" + encodeURIComponent(w.id), wordData(S.words.get(w.id)))
-    : api("DELETE", "/api/words/" + encodeURIComponent(w.id)));
+  persist(w.id, () => S.words.has(w.id) ? api("PUT", wordUrl(w.id), wordData(S.words.get(w.id))) : api("DELETE", wordUrl(w.id)));
 }
-function removeWord(id){ S.words.delete(id); persist(id, () => api("DELETE", "/api/words/" + encodeURIComponent(id))); }
+// Practising: only your own progress file changes.
+function saveProgress(w){
+  S.words.set(w.id, w);
+  persist(w.id, () => S.words.has(w.id) ? api("PUT", "/api/progress/" + encodeURIComponent(w.id), wordData(S.words.get(w.id))) : null);
+}
+// Filling in a few fields (category, verb forms) without overwriting the rest of the word.
+function patchWord(id, fields){
+  const cur = S.words.get(id); if (!cur) return;
+  S.words.set(id, { ...cur, ...fields });
+  persist(id, () => S.words.has(id) ? api("PATCH", wordUrl(id), fields) : null);
+}
+function removeWord(id){ S.words.delete(id); persist(id, () => api("DELETE", wordUrl(id))); }
 function saveHistory(){ persist("history", () => api("PUT", "/api/history", { days: S.history })); }
+
+function loadData(data){
+  S.words = new Map(Object.entries(data.words || {}).map(([id, w]) => [id, { id, ...w }]));
+  S.history = (data.history && data.history.days) || {};
+  S.rev = data.rev || 0;
+}
 
 async function initStore(){
   try {
-    const data = await api("GET", "/api/data");
-    for (const [id, w] of Object.entries(data.words || {})) S.words.set(id, { id, ...w });
-    S.history = (data.history && data.history.days) || {};
+    loadData(await api("GET", "/api/data"));
     S.persistent = true;
   } catch(e) { S.persistent = false; }
   S.ready = true;
   renderAll();
   backfillCategories().then(backfillVerbForms);
+  if (S.persistent) setInterval(checkForChanges, 20000);
 }
+
+// The vocabulary may be shared: pick up words someone else added, edited or deleted.
+// Never in the middle of a round or while one of our own saves is still on its way.
+async function checkForChanges(){
+  if (session || S.inflight || document.hidden) return;
+  let v;
+  try { v = await api("GET", "/api/version"); } catch (e) { return; }
+  if (!v || v.rev === S.rev || session || S.inflight) return;
+  let data;
+  try { data = await api("GET", "/api/data"); } catch (e) { return; }
+  if (session || S.inflight) return;
+  const before = new Set(S.words.keys());
+  loadData(data);
+  const added = [...S.words.keys()].filter(id => !before.has(id)).length;
+  const removed = [...before].filter(id => !S.words.has(id)).length;
+  if (editingId && !S.words.has(editingId)) cancelEdit();
+  renderAll();
+  if (added || removed) toast([added && `${added} new word${added === 1 ? "" : "s"}`, removed && `${removed} removed`].filter(Boolean).join(", ") + " from the shared list.");
+  backfillCategories().then(backfillVerbForms);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && S.persistent) checkForChanges(); });
 
 /* ---------- word categories ---------- */
 const CATEGORIES = [
@@ -403,14 +445,14 @@ $("#fCat").innerHTML += CATEGORIES.map(([v, l]) => `<option value="${v}">${l}</o
 async function backfillCategories(){
   if (!S.persistent) return;
   const todo = [...S.words.values()].filter(w => !w.category);
-  for (const w of todo) if (w.article) saveWord({ ...w, category:"noun" });
+  for (const w of todo) if (w.article) patchWord(w.id, { category:"noun" });
   let changed = todo.some(w => w.article);
   for (const w of todo.filter(w => !w.article)) {
     let results;
     try { results = await lookupApi(w.de); } catch (e) { continue; }   // offline: try again next time
     const cur = S.words.get(w.id); if (!cur || cur.category) continue;
     const r = results.find(r => r.de === w.de && norm(r.en) === norm(w.en)) || results.find(r => r.de === w.de) || results[0];
-    saveWord({ ...cur, category: r ? r.category : "other" });
+    patchWord(cur.id, { category: r ? r.category : "other" });
     changed = true;
   }
   if (changed) renderWords();
@@ -429,7 +471,7 @@ async function backfillVerbForms(){
       try { results = await lookupApi(w.de.replace(/^sich\s+/i, "")); } catch (e) { continue; }   // offline: try again next time
       const cur = S.words.get(w.id); if (!cur || cur.forms || cur.category !== "verb") continue;
       const r = results.find(r => r.forms && norm(r.en) === norm(cur.en)) || results.find(r => r.forms);
-      saveWord({ ...cur, forms: r ? r.forms : {} });
+      patchWord(cur.id, { forms: r ? r.forms : {} });
     }
     if (todo.length) { renderWords(); if (!session) renderIdle(); }
   } finally { backfillingForms = false; }
@@ -936,7 +978,7 @@ function answer(ok){
       w[T.wrong] = (w[T.wrong] || 0) + 1; w[T.box] = 1; w[T.due] = t;
       h[T.hw] = (h[T.hw] || 0) + 1;
     }
-    saveWord(w); saveHistory();
+    saveProgress(w); saveHistory();
     s.done++;
     if (ok) s.knew++;
     else { s.missedIds.push(c.id); s.queue.push({ id:c.id, again:true }); s.total++; }
