@@ -584,7 +584,7 @@ function renderIdle(){
       ${T.tense ? `<div class="opt"><span class="label">Tense</span>${segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l]))}</div>
       <div class="opt"><span class="label">Ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
       ${T.decl ? `<div class="opt"><span class="label">Article</span>${segHTML("decl", T.decl, DECL_KINDS)}</div>${declOpts("")}` : ""}
-      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[0,"All"]])}</div>
+      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"]])}</div>
     </div>
     <div class="row">
       ${due ? `<button class="btn primary" data-act="start">Start practice</button>`
@@ -620,7 +620,7 @@ function renderMixedIdle(el){
       <div class="opt"><span class="label">Vocabulary answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
       ${anyVerbs ? `<div class="opt"><span class="label">Verbs: ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
       ${anyDecl ? declOpts("Ein, mein: ") : ""}
-      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[0,"All"]])}</div>
+      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"]])}</div>
     </div>
     <div class="row">
       ${nDue ? `<button class="btn primary" data-act="start">Start practice</button>`
