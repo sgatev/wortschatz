@@ -322,6 +322,12 @@ details[open] summary{margin-bottom:10px}
 
   <!-- PROGRESS -->
   <section id="view-progress" class="stack" hidden>
+    <div class="panel">
+      <h3>Most frequent mistakes</h3>
+      <p class="muted" style="font-size:.9rem">Across all tests, by how many times you’ve missed each one.</p>
+      <ul class="missed" id="mistakes"></ul>
+      <button class="btn link" type="button" id="mistakesMore" style="align-self:flex-start" hidden></button>
+    </div>
     <div id="statsSwitch"></div>
     <div class="tiles" id="tiles"></div>
     <div class="panel">
@@ -1537,12 +1543,33 @@ function renderProgress(){
   // tricky
   $("#trickyTitle").textContent = T.trickyTitle;
   const wrong = w => w[T.wrong] || 0, seen = w => w[T.seen] || 1;
-  const detail = w => key === "plural" ? (w.plural || "") : T.tense ? (principalParts(w) || w.en) : T.decl ? declSummary(w, key) : w.en;
   const tricky = words.filter(w => wrong(w) > 0).sort((a,b) => (wrong(b)/seen(b) - wrong(a)/seen(a)) || (wrong(b) - wrong(a))).slice(0, 6);
   $("#tricky").innerHTML = tricky.length ? tricky.map(w =>
-    `<li><span>${deHTML(w)} <span class="muted">· ${esc(detail(w))}</span></span><span class="acc num">missed ${wrong(w)} of ${seen(w)}</span></li>`).join("")
+    `<li><span>${deHTML(w)} <span class="muted">· ${esc(cardDetail(w, key))}</span></span><span class="acc num">missed ${wrong(w)} of ${seen(w)}</span></li>`).join("")
     : `<li><span class="muted">No misses yet. Anything you miss in this test will collect here.</span></li>`;
 }
+
+// What a test asks about a word: its plural, verb forms, ein / mein forms or meaning.
+const cardDetail = (w, test) => test === "plural" ? (w.plural || "") : TESTS[test].tense ? (principalParts(w) || w.en) : TESTS[test].decl ? declSummary(w, test) : w.en;
+const testName = test => TESTS[test].tense ? `Verbs · ${TESTS[test].label}` : (MIX_PARTS.find(([k]) => k === test) || [, ""])[1];
+
+// Every word you've missed in every test, most misses first (then the higher miss rate).
+const MISTAKES_SHOWN = 10;
+let mistakesAll = false;
+function renderMistakes(){
+  const list = [];
+  for (const [key, T] of Object.entries(TESTS))
+    for (const w of T.pool()) if (w[T.wrong] > 0) list.push({ w, key, wrong:w[T.wrong], seen:w[T.seen] || w[T.wrong] });
+  list.sort((a, b) => (b.wrong - a.wrong) || (b.wrong / b.seen - a.wrong / a.seen));
+  const shown = mistakesAll ? list : list.slice(0, MISTAKES_SHOWN);
+  $("#mistakes").innerHTML = shown.length ? shown.map(({ w, key, wrong, seen }, i) =>
+    `<li><span><span class="acc num">${i + 1}.</span> ${deHTML(w)}<span class="cat">${esc(testName(key))}</span> <span class="muted">· ${esc(cardDetail(w, key))}</span></span><span class="acc num">missed ${wrong} of ${seen}</span></li>`).join("")
+    : `<li><span class="muted">No mistakes yet. Anything you miss in any test will be ranked here.</span></li>`;
+  const more = $("#mistakesMore");
+  more.hidden = list.length <= MISTAKES_SHOWN;
+  more.textContent = mistakesAll ? "Show fewer" : `Show all ${list.length}`;
+}
+$("#mistakesMore").addEventListener("click", () => { mistakesAll = !mistakesAll; renderMistakes(); });
 
 /* ---------- render ---------- */
 function updateCounts(){ $("#wordCount").textContent = S.words.size ? String(S.words.size) : ""; }
@@ -1550,7 +1577,7 @@ function renderAll(){
   updateCounts();
   $("#notice").hidden = !(S.ready && !S.persistent);
   if (!session) { $("#practiceIdle").hidden = false; $("#practiceSession").hidden = true; renderIdle(); }
-  renderWords(); renderProgress();
+  renderWords(); renderProgress(); renderMistakes();
 }
 
 setTab(["practice","words","progress"].includes(prefs.tab) ? prefs.tab : "practice");
