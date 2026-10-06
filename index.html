@@ -115,8 +115,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .typebox input{width:100%;padding:12px 14px;font-size:1.15rem;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:center}
 .umlauts{display:flex;gap:6px;justify-content:center}
 .plrow{display:flex;align-items:center;gap:10px}
-.cjgrid{display:flex;flex-direction:column;gap:8px;width:100%;max-width:440px;margin:0 auto}
-.cjrow{display:grid;grid-template-columns:5.5em 1fr;gap:4px 12px;align-items:center}
+/* One grid for all rows, so the label column fits the longest label ("Akkusativ", "er/sie/es") and the fields line up. */
+.cjgrid{display:grid;grid-template-columns:max-content 1fr;gap:8px 16px;align-items:center;width:100%;max-width:440px;margin:0 auto}
+.cjrow{display:contents}
 .cjrow label{font-family:var(--f-mono);font-size:.85rem;color:var(--muted);text-align:right}
 .cjrow input{width:100%;min-width:0;padding:8px 12px;font-size:1.05rem;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
 .cjrow input:disabled{opacity:1;color:var(--ink)}
@@ -355,7 +356,7 @@ const INTERVALS = [0,0,1,3,7,16];           // days until next review, by box
 const BOX_NAMES = ["", "Box 1 · every day", "Box 2 · next day", "Box 3 · 3 days", "Box 4 · 1 week", "Box 5 · 16 days"];
 
 /* ---------- preferences (per browser) ---------- */
-const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab", stats:"vocab", tense:"präsens", cjmode:"all", mixParts:null };
+const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab", stats:"vocab", tense:"präsens", cjmode:"all", decl:"indef", dkmode:"all", declCases:null, mixParts:null };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("wz-prefs") || "{}")); } catch(e){}
 const savePrefs = () => { try { localStorage.setItem("wz-prefs", JSON.stringify(prefs)); } catch(e){} };
 
@@ -582,6 +583,7 @@ function renderIdle(){
       <div class="opt"><span class="label">Answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
       ${T.tense ? `<div class="opt"><span class="label">Tense</span>${segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l]))}</div>
       <div class="opt"><span class="label">Ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
+      ${T.decl ? `<div class="opt"><span class="label">Article</span>${segHTML("decl", T.decl, DECL_KINDS)}</div>${declOpts("")}` : ""}
       <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[0,"All"]])}</div>
     </div>
     <div class="row">
@@ -594,6 +596,10 @@ function renderIdle(){
     ${body}</div>`;
 }
 
+const declOpts = pre => `<div class="opt"><span class="label">${pre}ask for</span>${segHTML("dkmode", dkMode(), [["all","All cases"],["one","One case"]])}</div>
+      <div class="opt" style="grid-column:1/-1"><span class="label">${pre}cases</span><div class="catfilter" role="group" aria-label="Cases to practise">${
+        CASES.map((name, i) => `<button type="button" data-case="${i}" aria-pressed="${declCases().includes(i)}">${name}</button>`).join("")}</div></div>`;
+
 function renderMixedIdle(el){
   const on = mixParts();
   const due = mixCandidates(false), all = mixCandidates(true);
@@ -603,7 +609,7 @@ function renderMixedIdle(el){
     const pressed = on.includes(k), n = dueEach[k] || 0;
     return `<button type="button" data-mix="${k}" aria-pressed="${pressed}">${label}<span class="n">${n}</span></button>`;
   }).join("");
-  const anyVerbs = on.some(k => k.startsWith("verbs_")), anyVocab = on.includes("vocab");
+  const anyVerbs = on.some(k => k.startsWith("verbs_")), anyVocab = on.includes("vocab"), anyDecl = on.some(k => TESTS[k].decl);
   el.innerHTML = `<div class="panel">
     <div class="opt"><span class="label">Test</span>${segHTML("test", "mixed", PRACTICE_OPTIONS)}</div>
     <div class="due"><span class="big num">${nDue}</span><span>${nDue === 1 ? "word has" : "words have"} something due <span class="muted">· across ${on.length} test${on.length === 1 ? "" : "s"}</span></span></div>
@@ -613,6 +619,7 @@ function renderMixedIdle(el){
       ${anyVocab ? `<div class="opt"><span class="label">Vocabulary direction</span>${segHTML("dir", prefs.dir, [["de-en","DE → EN"],["en-de","EN → DE"],["mix","Mixed"]])}</div>
       <div class="opt"><span class="label">Vocabulary answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
       ${anyVerbs ? `<div class="opt"><span class="label">Verbs: ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
+      ${anyDecl ? declOpts("Ein, mein: ") : ""}
       <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[0,"All"]])}</div>
     </div>
     <div class="row">
@@ -630,6 +637,12 @@ document.addEventListener("click", e => {
     const on = new Set(mixParts()), k = mx.dataset.mix;
     if (on.has(k)) { if (on.size > 1) on.delete(k); } else on.add(k);   // keep at least one
     prefs.mixParts = MIX_PARTS.map(([key]) => key).filter(key => on.has(key)); savePrefs(); renderIdle(); return;
+  }
+  const dc = e.target.closest("[data-case]");
+  if (dc) {
+    const on = new Set(declCases()), i = Number(dc.dataset.case);
+    if (on.has(i)) { if (on.size > 1) on.delete(i); } else on.add(i);   // keep at least one
+    prefs.declCases = [...on].sort(); savePrefs(); renderIdle(); return;
   }
   const a = e.target.closest("[data-act]"); if (!a) return;
   const act = a.dataset.act;
@@ -707,10 +720,23 @@ for (const [tense, label, pre] of TENSES) {
     trickyTitle:`Trickiest verbs (${label})`, accLabel:`verbs right, 30 days`,
   };
 }
-const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"]];
+// Declining ein / mein: one test each, sharing the noun list with the article test.
+for (const [decl, label, pre, h, what] of [["indef","Indefinitartikel","in","i","ein, eine"], ["poss","Possessivartikel","po","o","mein, dein"]]) {
+  TESTS[decl] = {
+    decl, label,
+    box:pre+"Box", due:pre+"Due", seen:pre+"Seen", correct:pre+"Correct", wrong:pre+"Wrong", hc:h+"c", hw:h+"w",
+    pool: nounWords,
+    one:"noun is", many:"nouns are", inList:"nouns in your list", unit:"nouns",
+    doneText:`nouns right on the first try (${what})`, allText:"Every case on the first try.",
+    emptyText:TESTS.articles.emptyText,
+    chartTitle:`${label} answers, last 30 days`, boxesNote:`A noun climbs a box when you get every case of ${what} right and drops back to box 1 when you miss one.`,
+    trickyTitle:`Trickiest nouns (${what})`, accLabel:"nouns right, 30 days",
+  };
+}
+const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"],["decl","Ein, mein"]];
 const tenseKey = () => TENSES.some(t => t[0] === prefs.tense) ? prefs.tense : "präsens";
-const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : TESTS[name] ? name : "vocab";
-const testGroup = key => key.startsWith("verbs_") ? "verbs" : key;
+const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : name === "decl" ? declKind() : TESTS[name] ? name : "vocab";
+const testGroup = key => key.startsWith("verbs_") ? "verbs" : TESTS[key] && TESTS[key].decl ? "decl" : key;
 const currentTest = () => prefs.test === "mixed" ? "mixed" : testKey(prefs.test);
 const PRACTICE_OPTIONS = TEST_OPTIONS.concat([["mixed","Mixed"]]);
 
@@ -719,7 +745,8 @@ const PRACTICE_OPTIONS = TEST_OPTIONS.concat([["mixed","Mixed"]]);
    is just another way through what's due. A word appears at most once per round,
    so "der Hund" in one card can't give away "der, die oder das: Hund" in the next. */
 const MIX_PARTS = [["vocab","Vocabulary"],["articles","Articles"],["plural","Plurals"],
-                   ["verbs_präsens","Präsens"],["verbs_präteritum","Präteritum"],["verbs_perfekt","Perfekt"]];
+                   ["verbs_präsens","Präsens"],["verbs_präteritum","Präteritum"],["verbs_perfekt","Perfekt"],
+                   ["indef","Ein, eine"],["poss","Mein, dein"]];
 const mixParts = () => {
   const on = Array.isArray(prefs.mixParts) ? prefs.mixParts.filter(k => TESTS[k]) : [];
   return on.length ? on : MIX_PARTS.map(([k]) => k);
@@ -793,6 +820,7 @@ function renderCard(){
   if (kind === "articles") { renderArticleCard(); return; }
   if (kind === "plural") { renderPluralCard(); return; }
   if (kind.startsWith("verbs_")) { renderVerbCard(); return; }
+  if (TESTS[kind].decl) { renderDeclCard(); return; }
   const s = session, c = s.cur, w = S.words.get(c.id);
   const front = c.dir === "de-en" ? `<span class="word">${deHTML(w)}</span>` : `<span class="word">${esc(w.en)}</span>`;
   const back = c.dir === "de-en" ? `<span class="word">${esc(w.en)}</span>` : `<span class="word">${deHTML(w)}</span>`;
@@ -1028,6 +1056,112 @@ function checkVerbCard(){
   renderVerbCard();
 }
 
+/* ---------- ein / mein test: decline the indefinite or possessive article ---------- */
+const CASES = ["Nominativ", "Akkusativ", "Dativ", "Genitiv"];
+const DECL_ENDINGS = { m:["", "en", "em", "es"], f:["e", "e", "er", "er"], n:["", "", "em", "es"], pl:["e", "e", "en", "er"] };
+const GENDER_OF = { der:"m", die:"f", das:"n" };
+const GENDER_NAMES = { m:"Masculine", f:"Feminine", n:"Neuter", pl:"Plural" };
+// [person, possessive article, English]
+const POSSESSORS = [["ich","mein","my"], ["du","dein","your"], ["er","sein","his"], ["sie","ihr","her"], ["es","sein","its"],
+                    ["wir","unser","our"], ["ihr","euer","your, plural"], ["sie","ihr","their"], ["Sie","Ihr","your, formal"]];
+const DECL_KINDS = [["indef","Indefinit"], ["poss","Possessiv"]];
+const declKind = () => prefs.decl === "poss" ? "poss" : "indef";
+const dkMode = () => prefs.dkmode === "one" ? "one" : "all";
+// The cases picked under "Cases" (all four until you choose), in order.
+const declCases = () => {
+  const on = Array.isArray(prefs.declCases) ? [0, 1, 2, 3].filter(i => prefs.declCases.includes(i)) : [];
+  return on.length ? on : [0, 1, 2, 3];
+};
+
+// Every accepted spelling, the usual one first: euer → eure, unser → unseren / unsren / unsern.
+function declForms(stem, g, i){
+  const e = DECL_ENDINGS[g][i];
+  if (!e) return [stem];
+  if (stem === "euer") return ["eur" + e];
+  if (stem === "unser") return ["unser" + e, "unsr" + e].concat(e === "en" || e === "em" ? ["unser" + e.slice(1)] : []);
+  return [stem + e];
+}
+const declGender = (w, c) => c.plural ? "pl" : GENDER_OF[w.article];
+const declStem = c => c.test === "poss" ? POSSESSORS[c.owner][1] : "ein";
+const declTable = (w, c) => CASES.map((_, i) => declForms(declStem(c), declGender(w, c), i));
+// "ein · einen · einem · eines" (the cases being practised), for the answer and the lists of missed words.
+const declLine = (w, c) => { const t = declTable(w, c); return declCases().map(i => t[i][0]).join(" · "); };
+
+function checkDeclForm(alts, typed){
+  // Typing the noun too ("einen Hund") is fine.
+  const got = deFold(typed).split(" ")[0];
+  return !!got && alts.some(a => deFold(a) === got);
+}
+
+function renderDeclCard(){
+  const s = session, c = s.cur, w = S.words.get(c.id), T = TESTS[c.test];
+  if (!c.cases) {
+    const cases = declCases();
+    c.cases = dkMode() === "one" ? [cases[Math.floor(Math.random() * cases.length)]] : cases;
+    c.owner = Math.floor(Math.random() * POSSESSORS.length);
+    c.plural = c.test === "poss" && !!pluralOf(w) && Math.random() < .5;
+    c.typedAll = ["", "", "", ""];
+  }
+  const table = declTable(w, c), g = declGender(w, c), one = c.cases.length === 1;
+  const h = sessionHeader(s, `${T.label} · decline`, w[T.box] || 1, c.again);
+  const rows = c.cases.map(i => {
+    const state = !c.revealed ? "" : c.rows[i] ? "ok" : "miss";
+    const fix = c.revealed && !c.rows[i] ? `<span class="cjfix">${esc(table[i][0])}</span>` : "";
+    return `<div class="cjrow ${state}">
+      <label for="cj${i}">${CASES[i]}</label>
+      <input id="cj${i}" class="cjin" value="${esc(c.typedAll[i])}" autocomplete="off" autocapitalize="off" spellcheck="false" ${c.revealed ? "disabled" : ""}>
+      ${fix}</div>`;
+  }).join("");
+  const nWrong = c.revealed ? c.cases.filter(i => !c.rows[i]).length : 0;
+  const verdict = !c.revealed ? "" : `<span class="verdict ${c.ok ? "ok" : "miss"}">${
+    one ? (c.ok ? "Richtig!" : "Not quite.") : c.ok ? "Richtig! Every case." : `${nWrong} of ${c.cases.length} not quite.`}</span>`;
+  const word = c.plural ? `<span class="art art-die">die</span> ${esc(pluralOf(w))}` : deHTML(w);
+  const [person, , whose] = POSSESSORS[c.owner];
+  const sub = c.test === "poss"
+    ? `<span class="extra">whose? <b>${esc(person)}</b> (${esc(whose)})${c.plural ? " · plural" : ""} · ${esc(w.en)}</span>`
+    : `<span class="extra">${esc(w.en)}</span>`;
+  const controls = c.revealed
+    ? `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`
+    : `<div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div>
+       <p class="hint">${one ? "" : "Enter moves to the next line. "}Type the article; adding the noun is fine too.</p>`;
+  $("#practiceSession").innerHTML = `${h.top}
+    <div class="card">${h.cardTop}
+      <div class="prompt">
+        <span class="word">${word}</span>
+        ${sub}
+        ${verdict}
+      </div>
+      <div class="cjgrid ${one ? "one" : ""}">${rows}</div>
+      ${c.revealed && declCases().length > 1 ? `<p class="hint">${GENDER_NAMES[g]}: ${esc(declLine(w, c))}</p>` : ""}
+    </div>
+    ${controls}`;
+  if (c.revealed) { const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true }); }
+  else {
+    document.querySelectorAll(".cjin").forEach(inp => inp.addEventListener("input", () => { c.typedAll[Number(inp.id.slice(2))] = inp.value; }));
+    const first = [...document.querySelectorAll(".cjin")].find(x => !x.value) || $(".cjin");
+    first.focus();
+  }
+}
+
+function checkDeclCard(){
+  const c = session.cur; if (!c || c.revealed) return;
+  const table = declTable(S.words.get(c.id), c);
+  c.rows = [];
+  for (const i of c.cases) {
+    c.typedAll[i] = ($("#cj" + i) || {}).value || "";
+    c.rows[i] = checkDeclForm(table[i], c.typedAll[i]);
+  }
+  c.ok = c.cases.every(i => c.rows[i]); c.revealed = true;
+  renderDeclCard();
+}
+
+// The singular ein / mein forms of a noun, for the lists of missed and tricky words.
+const declSummary = (w, test) => declLine(w, { test, owner:0, plural:false });
+
+// Verb and ein/mein cards: a grid of fields, Enter moves down and checks after the last.
+const isGridTest = test => test.startsWith("verbs_") || !!TESTS[test].decl;
+const checkGridCard = () => TESTS[session.cur.test].decl ? checkDeclCard() : checkVerbCard();
+
 function reveal(){ if (!session || session.cur.revealed) return; session.cur.revealed = true; renderCard(); }
 
 function norm(s){ return String(s).toLowerCase().normalize("NFC").replace(/[.!?"“”„'’()]/g,"").replace(/\s+/g," ").trim(); }
@@ -1056,7 +1190,7 @@ function checkAnswer(w, dir, input){
   return { ok:false };
 }
 function checkTyped(){
-  if (session.cur.test.startsWith("verbs_")) { checkVerbCard(); return; }
+  if (isGridTest(session.cur.test)) { checkGridCard(); return; }
   const c = session.cur, w = S.words.get(c.id), typed = $("#typed").value;
   const r = c.test === "plural" ? checkPlural(w, typed) : checkAnswer(w, c.dir, typed);
   c.ok = r.ok; c.msg = r.msg || ""; c.typed = typed.trim(); c.revealed = true; renderCard();
@@ -1095,7 +1229,7 @@ function finishSession(){
   const partLabel = test => (MIX_PARTS.find(([k]) => k === test) || [, ""])[1];
   const detail = ({ id, test }) => {
     const w = S.words.get(id);
-    const d = test === "articles" ? (genderTip(w) || w.en) : test === "plural" ? (w.plural || "") : TESTS[test].tense ? principalParts(w) || w.en : w.en;
+    const d = test === "articles" ? (genderTip(w) || w.en) : test === "plural" ? (w.plural || "") : TESTS[test].tense ? principalParts(w) || w.en : TESTS[test].decl ? declSummary(w, test) : w.en;
     return mixed ? `${partLabel(test)} · ${d}` : d;
   };
   $("#practiceSession").innerHTML = `<div class="panel">
@@ -1125,12 +1259,12 @@ document.addEventListener("keydown", e => {
     else if (c.revealed && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); answer(c.ok); }
     return;
   }
-  if (c.test.startsWith("verbs_")) {
+  if (isGridTest(c.test)) {
     if (e.key !== "Enter") return;
     e.preventDefault();
     if (c.revealed) { answer(c.ok); return; }
     const inputs = [...document.querySelectorAll(".cjin")], i = inputs.indexOf(e.target);
-    if (i >= 0 && i < inputs.length - 1) inputs[i + 1].focus(); else checkVerbCard();
+    if (i >= 0 && i < inputs.length - 1) inputs[i + 1].focus(); else checkGridCard();
     return;
   }
   if (c.test === "plural" || prefs.mode === "type") {
@@ -1347,7 +1481,8 @@ function niceStep(max){ for (const s of [1,2,5,10,20,25,50,100,200,250,500,1000]
 function renderProgress(){
   const key = testKey(prefs.stats), T = TESTS[key];
   $("#statsSwitch").innerHTML = segHTML("stats", testGroup(key), TEST_OPTIONS) +
-    (T.tense ? segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l])) : "");
+    (T.tense ? segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l])) : "") +
+    (T.decl ? segHTML("decl", T.decl, DECL_KINDS) : "");
   const total = h => Object.values(h).reduce((a, n) => a + (Number(n) || 0), 0);
   const t = today(), days = [];
   for (let i = 29; i >= 0; i--) {
@@ -1402,7 +1537,7 @@ function renderProgress(){
   // tricky
   $("#trickyTitle").textContent = T.trickyTitle;
   const wrong = w => w[T.wrong] || 0, seen = w => w[T.seen] || 1;
-  const detail = w => key === "plural" ? (w.plural || "") : T.tense ? (principalParts(w) || w.en) : w.en;
+  const detail = w => key === "plural" ? (w.plural || "") : T.tense ? (principalParts(w) || w.en) : T.decl ? declSummary(w, key) : w.en;
   const tricky = words.filter(w => wrong(w) > 0).sort((a,b) => (wrong(b)/seen(b) - wrong(a)/seen(a)) || (wrong(b) - wrong(a))).slice(0, 6);
   $("#tricky").innerHTML = tricky.length ? tricky.map(w =>
     `<li><span>${deHTML(w)} <span class="muted">· ${esc(detail(w))}</span></span><span class="acc num">missed ${wrong(w)} of ${seen(w)}</span></li>`).join("")
