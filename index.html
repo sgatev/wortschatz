@@ -625,7 +625,7 @@ function renderMixedIdle(el){
       ${anyVocab ? `<div class="opt"><span class="label">Vocabulary direction</span>${segHTML("dir", prefs.dir, [["de-en","DE → EN"],["en-de","EN → DE"],["mix","Mixed"]])}</div>
       <div class="opt"><span class="label">Vocabulary answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
       ${anyVerbs ? `<div class="opt"><span class="label">Verbs: ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
-      ${anyDecl ? declOpts("Ein, mein: ") : ""}
+      ${anyDecl ? declOpts("Ein, mein, kein: ") : ""}
       <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"]])}</div>
     </div>
     <div class="row">
@@ -726,8 +726,9 @@ for (const [tense, label, pre] of TENSES) {
     trickyTitle:`Trickiest verbs (${label})`, accLabel:`verbs right, 30 days`,
   };
 }
-// Declining ein / mein: one test each, sharing the noun list with the article test.
-for (const [decl, label, pre, h, what] of [["indef","Indefinitartikel","in","i","ein, eine"], ["poss","Possessivartikel","po","o","mein, dein"]]) {
+// Declining ein / mein / kein: one test each, sharing the noun list with the article test.
+for (const [decl, label, pre, h, what] of [["indef","Indefinitartikel","in","i","ein, eine"], ["poss","Possessivartikel","po","o","mein, dein"],
+                                         ["neg","Negativartikel","ne","n","kein, keine"]]) {
   TESTS[decl] = {
     decl, label,
     box:pre+"Box", due:pre+"Due", seen:pre+"Seen", correct:pre+"Correct", wrong:pre+"Wrong", hc:h+"c", hw:h+"w",
@@ -739,7 +740,7 @@ for (const [decl, label, pre, h, what] of [["indef","Indefinitartikel","in","i",
     trickyTitle:`Trickiest nouns (${what})`, accLabel:"nouns right, 30 days",
   };
 }
-const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"],["decl","Ein, mein"]];
+const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"],["decl","Ein, mein, kein"]];
 const tenseKey = () => TENSES.some(t => t[0] === prefs.tense) ? prefs.tense : "präsens";
 const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : name === "decl" ? declKind() : TESTS[name] ? name : "vocab";
 const testGroup = key => key.startsWith("verbs_") ? "verbs" : TESTS[key] && TESTS[key].decl ? "decl" : key;
@@ -752,7 +753,7 @@ const PRACTICE_OPTIONS = TEST_OPTIONS.concat([["mixed","Mixed"]]);
    so "der Hund" in one card can't give away "der, die oder das: Hund" in the next. */
 const MIX_PARTS = [["vocab","Vocabulary"],["articles","Articles"],["plural","Plurals"],
                    ["verbs_präsens","Präsens"],["verbs_präteritum","Präteritum"],["verbs_perfekt","Perfekt"],
-                   ["indef","Ein, eine"],["poss","Mein, dein"]];
+                   ["indef","Ein, eine"],["poss","Mein, dein"],["neg","Kein, keine"]];
 const mixParts = () => {
   const on = Array.isArray(prefs.mixParts) ? prefs.mixParts.filter(k => TESTS[k]) : [];
   return on.length ? on : MIX_PARTS.map(([k]) => k);
@@ -1070,8 +1071,8 @@ const GENDER_NAMES = { m:"Masculine", f:"Feminine", n:"Neuter", pl:"Plural" };
 // [person, possessive article, English]
 const POSSESSORS = [["ich","mein","my"], ["du","dein","your"], ["er","sein","his"], ["sie","ihr","her"], ["es","sein","its"],
                     ["wir","unser","our"], ["ihr","euer","your, plural"], ["sie","ihr","their"], ["Sie","Ihr","your, formal"]];
-const DECL_KINDS = [["indef","Indefinit"], ["poss","Possessiv"]];
-const declKind = () => prefs.decl === "poss" ? "poss" : "indef";
+const DECL_KINDS = [["indef","Indefinit"], ["poss","Possessiv"], ["neg","Negativ"]];
+const declKind = () => DECL_KINDS.some(([k]) => k === prefs.decl) ? prefs.decl : "indef";
 const dkMode = () => prefs.dkmode === "one" ? "one" : "all";
 // The cases picked under "Cases" (all four until you choose), in order.
 const declCases = () => {
@@ -1088,7 +1089,7 @@ function declForms(stem, g, i){
   return [stem + e];
 }
 const declGender = (w, c) => c.plural ? "pl" : GENDER_OF[w.article];
-const declStem = c => c.test === "poss" ? POSSESSORS[c.owner][1] : "ein";
+const declStem = c => c.test === "poss" ? POSSESSORS[c.owner][1] : c.test === "neg" ? "kein" : "ein";
 const declTable = (w, c) => CASES.map((_, i) => declForms(declStem(c), declGender(w, c), i));
 // "ein · einen · einem · eines" (the cases being practised), for the answer and the lists of missed words.
 const declLine = (w, c) => { const t = declTable(w, c); return declCases().map(i => t[i][0]).join(" · "); };
@@ -1105,7 +1106,8 @@ function renderDeclCard(){
     const cases = declCases();
     c.cases = dkMode() === "one" ? [cases[Math.floor(Math.random() * cases.length)]] : cases;
     c.owner = Math.floor(Math.random() * POSSESSORS.length);
-    c.plural = c.test === "poss" && !!pluralOf(w) && Math.random() < .5;
+    // ein has no plural; mein and kein do (meine Hunde, keine Hunde).
+    c.plural = c.test !== "indef" && !!pluralOf(w) && Math.random() < .5;
     c.typedAll = ["", "", "", ""];
   }
   const table = declTable(w, c), g = declGender(w, c), one = c.cases.length === 1;
@@ -1125,7 +1127,7 @@ function renderDeclCard(){
   const [person, , whose] = POSSESSORS[c.owner];
   const sub = c.test === "poss"
     ? `<span class="extra">whose? <b>${esc(person)}</b> (${esc(whose)})${c.plural ? " · plural" : ""} · ${esc(w.en)}</span>`
-    : `<span class="extra">${esc(w.en)}</span>`;
+    : `<span class="extra">${c.plural ? "plural · " : ""}${esc(w.en)}</span>`;
   const controls = c.revealed
     ? `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`
     : `<div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div>
