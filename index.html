@@ -1111,7 +1111,7 @@ function renderDeclCard(){
     c.typedAll = ["", "", "", ""];
   }
   const table = declTable(w, c), g = declGender(w, c), one = c.cases.length === 1;
-  const h = sessionHeader(s, `${T.label} · decline`, w[T.box] || 1, c.again);
+  const h = sessionHeader(s, `${T.label} · fill in the ${c.cases.length === 1 ? "case" : "cases"}`, w[T.box] || 1, c.again);
   const rows = c.cases.map(i => {
     const state = !c.revealed ? "" : c.rows[i] ? "ok" : "miss";
     const fix = c.revealed && !c.rows[i] ? `<span class="cjfix">${esc(table[i][0])}</span>` : "";
