@@ -85,7 +85,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* segmented controls */
 .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
 .opt{display:flex;flex-direction:column;gap:6px}
-.seg{display:flex;background:var(--sunk);border-radius:9px;padding:3px}
+.seg{display:flex;flex-wrap:wrap;background:var(--sunk);border-radius:9px;padding:3px}   /* wraps on narrow screens rather than overflowing */
 .seg button{flex:1;border:0;background:transparent;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:.88rem;color:var(--muted);white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(var(--shadow),.08)}
 
@@ -208,7 +208,7 @@ details[open] summary{margin-bottom:10px}
 /* stats */
 .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 #statsSwitch{display:flex;flex-direction:column;gap:10px}
-#statsSwitch .seg{max-width:360px}
+#statsSwitch .seg + .seg{max-width:360px}   /* tense / article kind; the test switch itself takes the full width */
 @media (max-width:620px){.tiles{grid-template-columns:repeat(2,1fr)}}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px}
 .tile b{font-family:var(--f-display);font-size:2rem;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
