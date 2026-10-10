@@ -835,8 +835,10 @@ function renderCard(){
   const typing = prefs.mode === "type";
   let answerBlock = "", controls = "";
   if (c.revealed) {
-    const verdict = typing ? `<span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig! That’s right." : "Not quite." }${c.msg ? " " + esc(c.msg) : ""}</span>` : "";
-    answerBlock = `<div class="answer">${verdict}${back}${extras}</div>`;
+    const verdict = typing ? `<span class="verdict ${c.ok ? "ok" : "miss"}">${c.alt ? "Richtig!" : c.ok ? "Richtig! That’s right." : "Not quite." }${c.msg ? " " + esc(c.msg) : ""}</span>` : "";
+    // Another word with the same meaning was accepted: the card's own word is shown as the other way to say it.
+    const backLabel = c.alt ? `<span class="label">This card’s word</span>` : "";
+    answerBlock = `<div class="answer">${verdict}${backLabel}${back}${extras}</div>`;
     controls = typing
       ? `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`
       : `<div class="actions"><button class="btn miss" data-act="missed">Didn’t know <span class="kbd">1</span></button><button class="btn ok" data-act="knew">Knew it <span class="kbd">2</span></button></div>`;
@@ -1188,7 +1190,8 @@ function checkAnswer(w, dir, input){
   const meanings = new Set(w.en.split(/[,/;]/).map(stripEn).filter(Boolean));
   for (const o of S.words.values()) {
     if (o === w || deFold(full(o)) !== got) continue;
-    if (o.en.split(/[,/;]/).map(stripEn).some(m => meanings.has(m))) return { ok:true, msg:`This card was ${full(w)}.` };
+    const shared = o.en.split(/[,/;]/).map(stripEn).find(m => meanings.has(m));
+    if (shared) return { ok:true, alt:true, msg:`${full(o)} also means “${shared}”.` };
   }
   if (w.article) {
     if (got === deFold(w.de)) return { ok:false, msg:`Right word, but nouns need their article: ${w.article} ${w.de}.` };
@@ -1201,7 +1204,7 @@ function checkTyped(){
   if (isGridTest(session.cur.test)) { checkGridCard(); return; }
   const c = session.cur, w = S.words.get(c.id), typed = $("#typed").value;
   const r = c.test === "plural" ? checkPlural(w, typed) : checkAnswer(w, c.dir, typed);
-  c.ok = r.ok; c.msg = r.msg || ""; c.typed = typed.trim(); c.revealed = true; renderCard();
+  c.ok = r.ok; c.msg = r.msg || ""; c.alt = !!r.alt; c.typed = typed.trim(); c.revealed = true; renderCard();
 }
 
 function answer(ok){
