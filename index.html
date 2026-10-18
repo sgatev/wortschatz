@@ -147,6 +147,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .artbtn.correct .kbd{color:var(--on-fill);border-color:var(--on-fill)}
 .artbtn.wrong{border-style:dashed;text-decoration:line-through;color:var(--miss)}
 .artbtn.dim{opacity:.35}
+.artbtns.two{grid-template-columns:repeat(2,1fr)}
+.sentence{font-family:var(--f-display);font-weight:700;font-size:clamp(1.5rem,5.5vw,2.3rem);line-height:1.15;overflow-wrap:anywhere}
+.sentence b{color:var(--focus)}
 
 /* results */
 .missed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
@@ -667,6 +670,7 @@ document.addEventListener("click", e => {
   else if (act === "next") answer(session.cur.ok);
   else if (act === "override") answer(true);
   else if (act === "art") pickArticle(a.dataset.a);
+  else if (act === "kn") pickKn(a.dataset.a);
   else if (act === "quit") endSession();
   else if (act === "retry") startSession(false, session.missed);
   else if (act === "done") { session = null; renderAll(); }
@@ -740,7 +744,18 @@ for (const [decl, label, pre, h, what] of [["indef","Indefinitartikel","in","i",
     trickyTitle:`Trickiest nouns (${what})`, accLabel:"nouns right, 30 days",
   };
 }
-const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"],["decl","Ein, mein, kein"]];
+// Kein or nicht: negate a short sentence built from a noun or an adjective.
+const adjectiveWords = () => [...S.words.values()].filter(w => w.category === "adjective");
+TESTS.keinnicht = {
+  box:"knBox", due:"knDue", seen:"knSeen", correct:"knCorrect", wrong:"knWrong", hc:"kc", hw:"kw",
+  pool: () => nounWords().concat(adjectiveWords()),
+  one:"word is", many:"words are", inList:"nouns and adjectives in your list", unit:"words",
+  doneText:"right on the first try (kein or nicht)", allText:"Every one right on the first try.",
+  emptyText:"Your list has no nouns with an article or adjectives yet. Add a few, like <i>Hund</i> or <i>schön</i>, and they’ll show up here.",
+  chartTitle:"Kein or nicht answers, last 30 days", boxesNote:"A word climbs a box when you pick kein or nicht correctly in a sentence with it and drops back to box 1 when you don’t.",
+  trickyTitle:"Trickiest words (kein or nicht)", accLabel:"right, 30 days",
+};
+const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"],["decl","Ein, mein, kein"],["keinnicht","Kein / nicht"]];
 const tenseKey = () => TENSES.some(t => t[0] === prefs.tense) ? prefs.tense : "präsens";
 const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : name === "decl" ? declKind() : TESTS[name] ? name : "vocab";
 const testGroup = key => key.startsWith("verbs_") ? "verbs" : TESTS[key] && TESTS[key].decl ? "decl" : key;
@@ -753,7 +768,7 @@ const PRACTICE_OPTIONS = TEST_OPTIONS.concat([["mixed","Mixed"]]);
    so "der Hund" in one card can't give away "der, die oder das: Hund" in the next. */
 const MIX_PARTS = [["vocab","Vocabulary"],["articles","Articles"],["plural","Plurals"],
                    ["verbs_präsens","Präsens"],["verbs_präteritum","Präteritum"],["verbs_perfekt","Perfekt"],
-                   ["indef","Ein, eine"],["poss","Mein, dein"],["neg","Kein, keine"]];
+                   ["indef","Ein, eine"],["poss","Mein, dein"],["neg","Kein, keine"],["keinnicht","Kein / nicht"]];
 const mixParts = () => {
   const on = Array.isArray(prefs.mixParts) ? prefs.mixParts.filter(k => TESTS[k]) : [];
   return on.length ? on : MIX_PARTS.map(([k]) => k);
@@ -825,6 +840,7 @@ const umlautButtons = () => `<div class="umlauts">${["ä","ö","ü","ß"].map(ch
 function renderCard(){
   const kind = session.cur.test;
   if (kind === "articles") { renderArticleCard(); return; }
+  if (kind === "keinnicht") { renderKnCard(); return; }
   if (kind === "plural") { renderPluralCard(); return; }
   if (kind.startsWith("verbs_")) { renderVerbCard(); return; }
   if (TESTS[kind].decl) { renderDeclCard(); return; }
@@ -918,6 +934,68 @@ function pickArticle(a){
   renderArticleCard();
   // A right answer moves on by itself; a wrong one waits so the answer can sink in.
   // Mixed rounds always wait for Enter, like their other cards.
+  if (c.ok && session.test !== "mixed") setTimeout(() => { if (session && session.cur === c) answer(true); }, 900);
+}
+
+/* ---------- kein or nicht ----------
+   kein replaces ein, or stands before a noun with no article; everything else
+   (a noun with der / die / das, an adjective) is negated with nicht.
+   Only Nominativ sentences ("Das ist …", "Das sind …"). */
+const KN = ["kein", "nicht"];
+// The sentences a word can appear in: [affirmative, negated, answer, rule].
+function knSentences(w){
+  if (w.category === "adjective" && !w.article)
+    return [[`Das ist ${w.de}.`, `Das ist <b>nicht</b> ${w.de}.`, "nicht", "Adjectives are negated with nicht."]];
+  const g = GENDER_OF[w.article], ein = declForms("ein", g, 0)[0], kein = declForms("kein", g, 0)[0], pl = pluralOf(w);
+  const out = [
+    [`Das ist ${ein} ${w.de}.`, `Das ist <b>${kein}</b> ${w.de}.`, "kein", `ein ${w.de} → ${kein} ${w.de}: kein replaces ein.`],
+    [`Das ist ${w.article} ${w.de}.`, `Das ist <b>nicht</b> ${w.article} ${w.de}.`, "nicht", `With der, die or das the noun keeps its article and takes nicht.`],
+  ];
+  if (pl && pl !== w.de) out.push(
+    [`Das sind ${pl}.`, `Das sind <b>keine</b> ${pl}.`, "kein", "A noun without an article is negated with kein (plural: keine)."],
+    [`Das sind die ${pl}.`, `Das sind <b>nicht</b> die ${pl}.`, "nicht", "With die (plural) the noun keeps its article and takes nicht."]);
+  return out;
+}
+
+function renderKnCard(){
+  const s = session, c = s.cur, w = S.words.get(c.id), T = TESTS.keinnicht;
+  if (!c.sentence) { const all = knSentences(w); c.sentence = all[Math.floor(Math.random() * all.length)]; }
+  const [pos, neg, right, rule] = c.sentence;
+  const h = sessionHeader(s, "Kein oder nicht?", w[T.box] || 1, c.again);
+  let answerBlock = "", after = "";
+  if (c.revealed) {
+    // The sentences are built from the word, so they're escaped except for the <b> around the answer.
+    const negHTML = esc(neg).replace(/&lt;(\/?)b&gt;/g, "<$1b>");
+    answerBlock = `<div class="answer">
+      <span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig!" : `It’s ${right}, not ${esc(c.picked)}.`}</span>
+      <span class="sentence">${negHTML}</span>
+      <span class="extra">${esc(rule)}</span>
+    </div>`;
+    after = `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button></div>`;
+  }
+  const buttons = KN.map((k, i) => {
+    const state = !c.revealed ? "" : k === right ? "correct" : k === c.picked ? "wrong" : "dim";
+    return `<button class="artbtn ${state}" data-act="kn" data-a="${k}" ${c.revealed ? "disabled" : ""}>${k}<span class="kbd">${i + 1}</span></button>`;
+  }).join("");
+  $("#practiceSession").innerHTML = `${h.top}
+    <div class="card">${h.cardTop}
+      <div class="prompt">
+        <span class="sentence">${esc(pos)}</span>
+        <span class="extra">${esc(w.en)}</span>
+      </div>
+      ${answerBlock}
+    </div>
+    <div class="artbtns two">${buttons}</div>
+    ${after}`;
+  const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true });
+}
+
+function pickKn(k){
+  const c = session && session.cur;
+  if (!c || c.revealed || c.test !== "keinnicht") return;
+  c.picked = k; c.ok = k === c.sentence[2]; c.revealed = true;
+  renderKnCard();
+  // Like the article test: a right answer moves on by itself, except in mixed rounds.
   if (c.ok && session.test !== "mixed") setTimeout(() => { if (session && session.cur === c) answer(true); }, 900);
 }
 
@@ -1263,6 +1341,13 @@ document.addEventListener("keydown", e => {
   if (e.repeat) { if (["Enter"," ","1","2","3"].includes(e.key)) e.preventDefault(); return; }
   const c = session.cur; if (!c) return;
   const inInput = e.target.matches("input,textarea,select");
+  if (c.test === "keinnicht") {
+    if (inInput) return;
+    const i = ["1","2"].indexOf(e.key);
+    if (!c.revealed && i >= 0) { e.preventDefault(); pickKn(KN[i]); }
+    else if (c.revealed && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); answer(c.ok); }
+    return;
+  }
   if (c.test === "articles") {
     if (inInput) return;
     const i = ["1","2","3"].indexOf(e.key);
