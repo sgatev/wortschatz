@@ -1255,20 +1255,22 @@ function reveal(){ if (!session || session.cur.revealed) return; session.cur.rev
 function norm(s){ return String(s).toLowerCase().normalize("NFC").replace(/[.!?"“”„'’()]/g,"").replace(/\s+/g," ").trim(); }
 function deFold(s){ return norm(s).replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss"); }
 const stripEn = s => norm(s).replace(/^(to|the|a|an) /,"");
+// Accepted English answers. A part in parentheses can be typed or left out:
+// "would like (to)" takes "would like" and "would like to"; "photographer (female)" takes "photographer".
+const enAnswers = en => [...new Set(String(en).split(/[,/;]/).flatMap(a => [stripEn(a.replace(/\([^)]*\)/g, " ")), stripEn(a)]).filter(Boolean))];
 function checkAnswer(w, dir, input){
   if (!input.trim()) return { ok:false };
   if (dir === "de-en") {
-    const alts = w.en.split(/[,/;]/).map(stripEn).filter(Boolean);
-    return { ok: alts.includes(stripEn(input)) };
+    return { ok: enAnswers(w.en).includes(stripEn(input)) };
   }
   const full = x => (x.article ? x.article + " " : "") + x.de;
   const exp = deFold(full(w)), got = deFold(input);
   if (got === exp) return { ok:true };
   // Another word with the same English meaning counts too (tourist: der Tourist / die Touristin).
-  const meanings = new Set(w.en.split(/[,/;]/).map(stripEn).filter(Boolean));
+  const meanings = new Set(enAnswers(w.en));
   for (const o of S.words.values()) {
     if (o === w || deFold(full(o)) !== got) continue;
-    const shared = o.en.split(/[,/;]/).map(stripEn).find(m => meanings.has(m));
+    const shared = enAnswers(o.en).find(m => meanings.has(m));
     if (shared) return { ok:true, alt:true, msg:`${full(o)} also means “${shared}”.` };
   }
   if (w.article) {
@@ -1450,12 +1452,12 @@ function renderResults(){
     return `<div class="result ${i === 0 ? "first" : ""}">
       <div style="min-width:0">
         <div class="rde">${deHTML(r)}${r.plural ? ` <span class="pl">· ${esc(r.plural)}</span>` : ""}<span class="pos">${esc(catLabel(r.category) || POS[r.pos] || r.pos)}</span></div>
-        <div class="ren">${esc(r.en)}</div>
+        <div class="ren">${r.en ? esc(r.en) : "<i>No English on Wiktionary. Use “Edit first” to add the meaning.</i>"}</div>
         ${r.gloss ? `<div class="gloss" lang="de">${esc(r.gloss)}</div>` : ""}
       </div>
       <div class="ract">
         <button class="btn small" type="button" data-q="edit" data-i="${i}">Edit first</button>
-        <button class="btn small ${dup ? "" : "primary"}" type="button" data-q="add" data-i="${i}" ${dup ? "disabled" : ""}>${dup ? "In your list" : "Add"}</button>
+        ${r.en ? `<button class="btn small ${dup ? "" : "primary"}" type="button" data-q="add" data-i="${i}" ${dup ? "disabled" : ""}>${dup ? "In your list" : "Add"}</button>` : ""}
       </div></div>`;
   }).join("") + (all.length > SHOWN
     ? `<button class="btn link more" type="button" data-q="more">${qState.expanded ? "Show fewer meanings" : `Show ${all.length - SHOWN} more meaning${all.length - SHOWN === 1 ? "" : "s"}`}</button>`
@@ -1464,6 +1466,7 @@ function renderResults(){
 
 function addResult(i){
   const r = qState.results[i]; if (!r) return;
+  if (!r.en) { editResult(r); return; }
   const label = (r.article ? r.article + " " : "") + r.de;
   if (exists(r.article, r.de, null, r.en)) { toast(`${label} is already in your list.`); return; }
   saveWord(makeWord({ article:r.article, de:r.de, en:r.en, plural:r.plural, note:r.gloss || "", category:r.category || "", forms:r.forms }));
@@ -1473,16 +1476,20 @@ function addResult(i){
   renderAll();
 }
 
+// Fill the manual form from a lookup result, to change it (or add a missing meaning) before saving.
+function editResult(r){
+  cancelEdit();
+  $("#fArt").value = r.article; $("#fDe").value = r.de; $("#fEn").value = r.en; $("#fPl").value = r.plural || ""; $("#fNote").value = r.gloss || ""; $("#fCat").value = r.category || "";
+  $("#manual").open = true; $("#fEn").focus(); $("#fEn").select();
+}
+
 $("#qResults").addEventListener("click", e => {
   const b = e.target.closest("[data-q]"); if (!b) return;
   const r = qState.results[Number(b.dataset.i)];
   if (b.dataset.q === "add") addResult(Number(b.dataset.i));
   else if (b.dataset.q === "more") { qState.expanded = !qState.expanded; renderResults(); }
-  else if (b.dataset.q === "edit" && r) {
-    cancelEdit();
-    $("#fArt").value = r.article; $("#fDe").value = r.de; $("#fEn").value = r.en; $("#fPl").value = r.plural || ""; $("#fNote").value = r.gloss || ""; $("#fCat").value = r.category || "";
-    $("#manual").open = true; $("#fEn").focus(); $("#fEn").select();
-  } else if (b.dataset.q === "manual") {
+  else if (b.dataset.q === "edit" && r) editResult(r);
+  else if (b.dataset.q === "manual") {
     cancelEdit(); $("#fDe").value = qState.word || splitArticle($("#qWord").value).de;
     $("#manual").open = true; $("#fEn").focus();
   }
@@ -1502,7 +1509,7 @@ $("#bulkAdd").addEventListener("click", async () => {
     if (parts.length >= 2) word = { ...s, en:parts.slice(1).join(", ") };
     else {
       status.textContent = `Looking up ${i + 1} of ${lines.length}…`;
-      try { const [r] = await lookupApi(s.de); if (r) word = { article:r.article, de:r.de, en:r.en, plural:r.plural, note:r.gloss || "", category:r.category || "", forms:r.forms }; } catch(e) {}
+      try { const r = (await lookupApi(s.de)).find(r => r.en); if (r) word = { article:r.article, de:r.de, en:r.en, plural:r.plural, note:r.gloss || "", category:r.category || "", forms:r.forms }; } catch(e) {}
       if (!word) { notFound.push(lines[i]); continue; }
     }
     if (exists(word.article, word.de, null, word.en)) { dup++; continue; }

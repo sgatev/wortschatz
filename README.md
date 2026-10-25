@@ -84,6 +84,10 @@ Every word has a category (noun, verb, adjective, adverb, preposition, conjuncti
 
 Verbs also get their conjugation from Wiktionary. Each verb entry lists the ich/du/er present forms, the ich Präteritum, the Partizip II, the plural imperative and the helper verb; the other forms follow regular rules (wir/sie = infinitive, ihr = plural imperative, Präteritum endings from the ich form, Perfekt = haben/sein + participle). Separable verbs keep their particle at the end ("rufe an"). Verbs already in your list get their forms in the background when the page loads, and the word list shows a verb's principal parts (*geht · ging · ist gegangen*).
 
+Some entries have no English translation on Wiktionary, often female forms such as *Fotografin*. A female form borrows the meaning of its male form (*Fotograf* → "photographer (female)"). Any other entry without English still shows up, with its article, plural and German definition but no Add button: use **Edit first** to type the meaning (pressing Enter again opens the form too). "Add many at once" skips such words and leaves them in the box. In vocabulary answers, a part in parentheses can be typed or left out: "photographer" counts for "photographer (female)", and both "would like" and "would like to" count for "would like (to)".
+
+A few everyday words that Wiktionary leaves incomplete are filled in by `lookup.js` itself (`BUILT_IN`). So far that's *möchten*: Wiktionary treats it as the Konjunktiv II of *mögen* and has no English or conjugation for it, so the app supplies "would like (to)" and its Präsens forms (*möchte, möchtest, …*). It takes part in the Präsens verb test only, since it has no Präteritum or Perfekt of its own.
+
 Lookups need an internet connection and are cached in memory while the server runs. If Wiktionary has no entry, you can still enter the word yourself. "Add many at once" also accepts bare German words, one per line.
 
 ## How practice works

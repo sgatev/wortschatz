@@ -10,6 +10,15 @@ const ARTICLES = { m: "der", f: "die", n: "das" };
 const SKIP_POS = /Deklinierte Form|Konjugierte Form|Eigenname|Nachname|Vorname|Toponym|Abkürzung|Partizip/;
 const cache = new Map();
 
+// Everyday words Wiktionary leaves incomplete. Filled in over (or instead of) what
+// the page has. "möchten" has no English and no conjugation table there, since it's
+// officially the Konjunktiv II of "mögen"; it has no Präteritum or Perfekt of its own.
+const BUILT_IN = {
+  "möchten": { article: "", de: "möchten", plural: "", en: "would like (to)", pos: "Verb", category: "verb",
+               forms: { präsens: ["möchte", "möchtest", "möchte", "möchten", "möchtet", "möchten"] },
+               sense: "1", gloss: "den Wunsch nach etwas hegen (höflich für „wollen“)" },
+};
+
 // Wiktionary's German part-of-speech labels -> a small set of English categories.
 // Order matters: "Adverb" and "Pronomen" must be checked before the broader "verb".
 const CATEGORY_RULES = [
@@ -149,6 +158,7 @@ function parseEntries(wikitext, title) {
     // One translation table per numbered meaning:
     //   {{Ü-Tabelle|2|G=unabhängiges politisches Gebilde|Ü-Liste=
     //   *{{en}}: {{Ü|en|country}}
+    const before = entries.length;
     const tables = [];
     p.lines.forEach((l, i) => { if (l.includes("{{Ü-Tabelle")) tables.push(i); });
     tables.forEach((start, k) => {
@@ -173,6 +183,22 @@ function parseEntries(wikitext, title) {
         _order: k,
       });
     });
+
+    // No English anywhere for this part of speech (often the case for female forms
+    // such as "Fotografin"): still offer the word, with its first German definition,
+    // and remember the male form so lookup() can borrow its meaning.
+    if (entries.length === before) {
+      const after = name => { const i = p.lines.findIndex(l => l.startsWith(`{{${name}}}`)); return i < 0 ? "" : (p.lines[i + 1] || ""); };
+      const meaning = after("Bedeutungen").match(/^:\[1\]\s*(.*)$/);
+      const male = after("Männliche Wortformen").match(/\[\[([^\]|]+)/);
+      entries.push({
+        article, de: title, plural, en: "", pos: p.pos, category: categoryOf(p.pos),
+        forms: categoryOf(p.pos) === "verb" ? verbForms(p.lines, title) || undefined : undefined,
+        sense: "1", gloss: meaning ? cleanWiki(meaning[1]) : "",
+        male: male && article === "die" ? male[1] : undefined,
+        _first: "", _order: tables.length,
+      });
+    }
   }
 
   // Wiktionary splits meanings finely (Land has 8). Keep a meaning only when its
@@ -224,6 +250,21 @@ async function lookup(word) {
       const k = [e.article, e.de, e.en].join("|");
       if (!seen.has(k)) { seen.add(k); results.push(e); }
     }
+  }
+  // A female form without English ("Fotografin") gets the male form's meaning: "photographer (female)".
+  for (const e of results) {
+    if (e.male && !e.en) {
+      let text = null;
+      try { text = await fetchRaw(e.male); } catch (err) {}
+      const m = text && parseEntries(text, e.male).find(x => x.category === "noun" && x.en);
+      if (m) e.en = m.en.split(", ").map(x => x + " (female)").join(", ");
+    }
+    delete e.male;
+  }
+  const own = BUILT_IN[key];
+  if (own) {
+    const i = results.findIndex(e => e.de === own.de && e.category === own.category);
+    if (i >= 0) results[i] = { ...results[i], ...own }; else results.unshift({ ...own });
   }
   cache.set(key, results);
   return results;
