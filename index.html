@@ -135,6 +135,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* article chips */
 .art{font-weight:600}
 .art-der{color:var(--der)} .art-die{color:var(--die)} .art-das{color:var(--das)}
+.art-pl{color:var(--ink)}   /* plural "die": every gender, so none of the gender colours */
 
 /* der / die / das buttons: each wears its gender colour */
 .artbtns{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
@@ -1304,14 +1305,14 @@ function renderPluralCard(){
     const pat = pluralPattern(w);
     answerBlock = `<div class="answer">
       <span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig!" : "Not quite."}${c.msg ? " " + esc(c.msg) : ""}</span>
-      <span class="word"><span class="art art-die">die</span> ${esc(pluralOf(w))}</span>
+      <span class="word"><span class="art art-pl">die</span> ${esc(pluralOf(w))}</span>
       ${!c.ok && c.typed ? `<span class="extra">You wrote: ${esc(c.typed)}</span>` : ""}
       ${pat ? `<span class="extra">Pattern: <b class="num">${esc(pat)}</b>${PATTERN_NAMES[pat] ? ` (${PATTERN_NAMES[pat]})` : ""}</span>` : `<span class="extra">Irregular plural</span>`}
     </div>`;
     controls = `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`;
   } else {
     controls = `<div class="typebox">
-        <div class="plrow"><span class="art art-die">die</span><input id="typed" placeholder="${esc(w.de)}…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="plrow"><span class="art art-pl">die</span><input id="typed" placeholder="${esc(w.de)}…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
         ${umlautButtons()}
         <div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div>
       </div>
@@ -1472,7 +1473,7 @@ function renderDeclCard(){
   const nWrong = c.revealed ? c.cases.filter(i => !c.rows[i]).length : 0;
   const verdict = !c.revealed ? "" : `<span class="verdict ${c.ok ? "ok" : "miss"}">${
     one ? (c.ok ? "Richtig!" : "Not quite.") : c.ok ? "Richtig! Every case." : `${nWrong} of ${c.cases.length} not quite.`}</span>`;
-  const word = c.plural ? `<span class="art art-die">die</span> ${esc(pluralOf(w))}` : deHTML(w);
+  const word = c.plural ? `<span class="art art-pl">die</span> ${esc(pluralOf(w))}` : deHTML(w);
   const [person, , whose] = POSSESSORS[c.owner];
   const sub = c.test === "poss"
     ? `<span class="extra">whose? <b>${esc(person)}</b> (${esc(whose)})${c.plural ? " · plural" : ""} · ${esc(w.en)}</span>`
