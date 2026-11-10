@@ -265,7 +265,20 @@ details[open] summary{margin-bottom:10px}
     </nav>
   </header>
 
-  <div id="notice" class="notice" hidden>Can’t reach the Wortschatz server, so nothing will be saved. Start it with <code>node server.js</code> in the wortschatz folder, then reload this page.</div>
+  <div id="notice" class="notice" hidden></div>
+
+  <!-- WHO'S PRACTISING (only when the words are kept in Supabase) -->
+  <section id="view-signin" class="stack" hidden>
+    <div class="panel">
+      <h2>Who’s practising?</h2>
+      <p class="muted" style="max-width:60ch">Everyone here shares one word list and can add to it. Your boxes and statistics are kept under your name: use the same name on any device to pick up where you left off.</p>
+      <form id="signinForm" class="stack" autocomplete="off" style="max-width:360px">
+        <div class="field"><label class="label" for="siName">Your name</label><input id="siName" maxlength="40" autocapitalize="off" spellcheck="false" required></div>
+        <div class="row"><button class="btn primary" type="submit">Start</button></div>
+        <p class="muted" id="siStatus" style="font-size:.9rem" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
 
   <!-- PRACTICE -->
   <section id="view-practice" class="stack">
@@ -312,6 +325,14 @@ details[open] summary{margin-bottom:10px}
           <div class="row"><button class="btn" type="button" id="bulkAdd">Add these words</button><span class="muted" id="bulkStatus" style="font-size:.9rem"></span></div>
         </div>
       </details>
+      <details id="importBox" hidden>
+        <summary>Import from the Mac app</summary>
+        <div class="stack">
+          <p class="muted" style="font-size:.9rem">Bring over what the local app saved. Choose <code>vocabulary.json</code> to add its words to the shared list (words already here are left as they are), and your own <code>progress-&lt;name&gt;.json</code> to bring your boxes and daily history. You can choose both at once.</p>
+          <div class="row"><input type="file" id="importFiles" accept=".json,application/json" multiple><button class="btn" type="button" id="importBtn">Import</button></div>
+          <p class="muted" id="importStatus" style="font-size:.9rem" aria-live="polite"></p>
+        </div>
+      </details>
     </div>
     <div class="panel">
       <div class="listhead">
@@ -350,8 +371,11 @@ details[open] summary{margin-bottom:10px}
       <ul class="missed" id="tricky"></ul>
     </div>
   </section>
+  <p class="hint" id="account" hidden></p>
 </div>
 <div class="toast" id="toast" hidden></div>
+<!-- Empty unless the app is hosted with Supabase; see supabase-config.js. -->
+<script src="supabase-config.js"></script>
 
 <script>
 (function(){
@@ -369,8 +393,10 @@ const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab",
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("wz-prefs") || "{}")); } catch(e){}
 const savePrefs = () => { try { localStorage.setItem("wz-prefs", JSON.stringify(prefs)); } catch(e){} };
 
-/* ---------- store: the local server keeps the shared vocabulary and your own progress ---------- */
-const S = { words:new Map(), history:{}, ready:false, persistent:false, rev:0, inflight:0 };
+/* ---------- store: the shared vocabulary and your own progress ----------
+   Kept either by the local server (node server.js) or, when the page is hosted
+   (GitHub Pages), in Supabase: see supabase-config.js and supabase.sql. */
+const S = { words:new Map(), history:{}, ready:false, persistent:false, rev:0, inflight:0, me:null };
 const queues = {};
 
 function toast(msg){
@@ -397,30 +423,131 @@ function persist(key, run){
   queues[key] = (queues[key] || Promise.resolve())
     .then(run)
     .then(r => { if (r && r.before === S.rev) S.rev = r.after; })
-    .catch(() => toast("Couldn’t save. Is the server still running?"))
+    .catch(() => toast(B.saveError))
     .finally(() => { S.inflight--; });
 }
 
 function wordData(w){ const { id, ...rest } = w; return rest; }
-const wordUrl = id => "/api/words/" + encodeURIComponent(id);
 // Adding or editing a word (shared list + your progress for it).
 function saveWord(w){
   S.words.set(w.id, w);
-  persist(w.id, () => S.words.has(w.id) ? api("PUT", wordUrl(w.id), wordData(S.words.get(w.id))) : api("DELETE", wordUrl(w.id)));
+  persist(w.id, () => S.words.has(w.id) ? B.putWord(w.id, wordData(S.words.get(w.id))) : B.deleteWord(w.id));
 }
-// Practising: only your own progress file changes.
+// Practising: only your own progress changes.
 function saveProgress(w){
   S.words.set(w.id, w);
-  persist(w.id, () => S.words.has(w.id) ? api("PUT", "/api/progress/" + encodeURIComponent(w.id), wordData(S.words.get(w.id))) : null);
+  persist(w.id, () => S.words.has(w.id) ? B.putProgress(w.id, wordData(S.words.get(w.id))) : null);
 }
 // Filling in a few fields (category, verb forms) without overwriting the rest of the word.
 function patchWord(id, fields){
   const cur = S.words.get(id); if (!cur) return;
   S.words.set(id, { ...cur, ...fields });
-  persist(id, () => S.words.has(id) ? api("PATCH", wordUrl(id), fields) : null);
+  persist(id, () => S.words.has(id) ? B.patchWord(id, fields) : null);
 }
-function removeWord(id){ S.words.delete(id); persist(id, () => api("DELETE", wordUrl(id))); }
-function saveHistory(){ persist("history", () => api("PUT", "/api/history", { days: S.history })); }
+function removeWord(id){ S.words.delete(id); persist(id, () => B.deleteWord(id)); }
+function saveHistory(){ persist("history", () => B.putHistory(S.history)); }
+
+// The local server: the page and the API come from node server.js.
+const localBackend = {
+  load: () => api("GET", "/api/data"),
+  version: () => api("GET", "/api/version").then(v => v.rev),
+  putWord: (id, w) => api("PUT", "/api/words/" + encodeURIComponent(id), w),
+  patchWord: (id, fields) => api("PATCH", "/api/words/" + encodeURIComponent(id), fields),
+  deleteWord: id => api("DELETE", "/api/words/" + encodeURIComponent(id)),
+  putProgress: (id, w) => api("PUT", "/api/progress/" + encodeURIComponent(id), w),
+  putHistory: days => api("PUT", "/api/history", { days }),
+  lookup: word => api("GET", "/api/lookup?word=" + encodeURIComponent(word)).then(d => d.results || []),
+  saveError: "Couldn’t save. Is the server still running?",
+  offline: "Can’t reach the Wortschatz server, so nothing will be saved. Start it with <code>node server.js</code> in the wortschatz folder, then reload this page.",
+};
+
+// Supabase: one row per word (shared), and per person one row of progress per word plus
+// one row of daily history. Lookups go from the page straight to Wiktionary (lookup.js).
+const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js";
+const SUPABASE_SRI = "sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK";
+const DICT_FIELDS = ["article", "de", "en", "plural", "category", "forms", "note", "created", "updated"];
+function splitWord(w){
+  const dict = {}, prog = {};
+  for (const [k, v] of Object.entries(w)) if (k !== "id") (DICT_FIELDS.includes(k) ? dict : prog)[k] = v;
+  delete dict.updated;   // set by the database
+  if ("forms" in dict && !dict.forms) dict.forms = null;
+  return { dict, prog };
+}
+function supabaseBackend(sb){
+  let rev = 0;   // counts changes other pages made to the words, as Realtime reports them
+  const ok = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
+  // The API returns at most 1000 rows at a time.
+  async function all(table, columns, name){
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      let q = sb.from(table).select(columns);
+      if (name) q = q.eq("user_name", name);   // only this person's progress
+      const page = ok(await q.order(table === "words" ? "id" : "word_id").range(from, from + 999));
+      rows.push(...page);
+      if (page.length < 1000) return rows;
+    }
+  }
+  sb.channel("words").on("postgres_changes", { event:"*", schema:"public", table:"words" }, () => {
+    rev++;
+    clearTimeout(supabaseBackend._t); supabaseBackend._t = setTimeout(checkForChanges, 1500);
+  }).subscribe();
+  const me = () => S.me.name;
+  return {
+    async load(){
+      const at = rev;
+      const [words, progress, history] = await Promise.all([
+        all("words", "*"), all("progress", "word_id,data", me()),
+        sb.from("history").select("days").eq("user_name", me()).maybeSingle().then(ok)]);
+      const out = {};
+      for (const { id, forms, ...w } of words) out[id] = forms ? { ...w, forms } : w;
+      for (const p of progress) if (out[p.word_id]) Object.assign(out[p.word_id], p.data);
+      return { words: out, history: { days: (history && history.days) || {} }, rev: at };
+    },
+    version: async () => rev,
+    async putWord(id, w){
+      const { dict, prog } = splitWord(w);
+      ok(await sb.from("words").upsert({ id, ...dict }));
+      if (Object.keys(prog).length) ok(await sb.from("progress").upsert({ user_name: me(), word_id: id, data: prog }));
+    },
+    async patchWord(id, fields){ ok(await sb.from("words").update(splitWord(fields).dict).eq("id", id)); },
+    async deleteWord(id){ ok(await sb.from("words").delete().eq("id", id)); },   // progress goes with it
+    async putProgress(id, w){ ok(await sb.from("progress").upsert({ user_name: me(), word_id: id, data: splitWord(w).prog })); },
+    async putHistory(days){ ok(await sb.from("history").upsert({ user_name: me(), days })); },
+    lookup: word => window.WortschatzLookup.lookup(word),
+    // Words from the local app's vocabulary.json; ones already in the list are left alone.
+    async importWords(rows){
+      let added = 0;
+      for (let i = 0; i < rows.length; i += 500)
+        added += ok(await sb.from("words").upsert(rows.slice(i, i + 500), { onConflict:"id", ignoreDuplicates:true }).select("id")).length;
+      return added;
+    },
+    async importProgress(rows){
+      for (let i = 0; i < rows.length; i += 500)
+        ok(await sb.from("progress").upsert(rows.slice(i, i + 500).map(r => ({ user_name: me(), ...r }))));
+    },
+    // Whether anyone has practised under this name yet.
+    async nameInUse(name){
+      const [h, p] = await Promise.all([
+        sb.from("history").select("user_name").eq("user_name", name).maybeSingle().then(ok),
+        sb.from("progress").select("word_id").eq("user_name", name).limit(1).then(ok)]);
+      return !!h || p.length > 0;
+    },
+    saveError: "Couldn’t save. Check your internet connection.",
+    offline: SUPABASE_OFFLINE,
+  };
+}
+const SUPABASE_OFFLINE = "Can’t reach the word list, so nothing will be saved. Check your internet connection, then reload this page.";
+let B = localBackend;
+
+function loadScript(src, integrity){
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src;
+    if (integrity) { el.integrity = integrity; el.crossOrigin = "anonymous"; }
+    el.onload = resolve; el.onerror = () => reject(new Error("Couldn’t load " + src));
+    document.head.appendChild(el);
+  });
+}
 
 function loadData(data){
   S.words = new Map(Object.entries(data.words || {}).map(([id, w]) => [id, { id, ...w }]));
@@ -429,8 +556,26 @@ function loadData(data){
 }
 
 async function initStore(){
+  const cfg = window.WORTSCHATZ_SUPABASE;
+  if (cfg && cfg.url && cfg.anonKey) {
+    let sb;
+    try {
+      await Promise.all([loadScript(SUPABASE_JS, SUPABASE_SRI), loadScript("lookup.js")]);
+      // No accounts: the publishable key and the rules in supabase.sql are all it takes.
+      sb = window.supabase.createClient(cfg.url, cfg.anonKey, { auth: { persistSession:false, autoRefreshToken:false } });
+    } catch (e) { B = { offline: SUPABASE_OFFLINE }; S.ready = true; renderAll(); return; }   // no connection to the CDN
+    let name = null;
+    try { name = localStorage.getItem("wz-name"); } catch (e) {}
+    B = supabaseBackend(sb);
+    if (!name) { showSignIn(); return; }
+    S.me = { name };
+    $("#account").innerHTML = `Practising as <b>${esc(name)}</b> · <button class="btn link" type="button" id="signOut">Not you?</button>`;
+    $("#account").hidden = false;
+    $("#signOut").addEventListener("click", () => { try { localStorage.removeItem("wz-name"); } catch (e) {} location.reload(); });
+    $("#importBox").hidden = false;
+  }
   try {
-    loadData(await api("GET", "/api/data"));
+    loadData(await B.load());
     S.persistent = true;
   } catch(e) { S.persistent = false; }
   S.ready = true;
@@ -444,10 +589,10 @@ async function initStore(){
 async function checkForChanges(){
   if (session || S.inflight || document.hidden) return;
   let v;
-  try { v = await api("GET", "/api/version"); } catch (e) { return; }
-  if (!v || v.rev === S.rev || session || S.inflight) return;
+  try { v = await B.version(); } catch (e) { return; }
+  if (v === undefined || v === S.rev || session || S.inflight) return;
   let data;
-  try { data = await api("GET", "/api/data"); } catch (e) { return; }
+  try { data = await B.load(); } catch (e) { return; }
   if (session || S.inflight) return;
   const before = new Set(S.words.keys());
   loadData(data);
@@ -459,6 +604,81 @@ async function checkForChanges(){
   backfillCategories().then(backfillVerbForms);
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S.persistent) checkForChanges(); });
+
+/* ---------- picking a name (Supabase only) ----------
+   The name is remembered in this browser. A name nobody has used yet needs a second
+   press of Start, so a typo ("Ana" for "Anna") doesn't quietly start an empty profile. */
+const nameKey = s => s.trim().toLowerCase().replace(/\s+/g, " ");
+function showSignIn(){
+  document.querySelector(".tabs").hidden = true;
+  ["practice","words","progress"].forEach(t => $("#view-"+t).hidden = true);
+  $("#view-signin").hidden = false;
+  const status = msg => { $("#siStatus").innerHTML = msg; };
+  let confirmNew = "";
+  $("#siName").addEventListener("input", () => { confirmNew = ""; status(""); });
+  $("#signinForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const name = nameKey($("#siName").value);
+    if (!name) return;
+    if (confirmNew !== name) {
+      let used;
+      try { used = await B.nameInUse(name); } catch (err) { status(esc(SUPABASE_OFFLINE)); return; }
+      if (!used) { confirmNew = name; status(`Nobody has practised as “${esc(name)}” yet. Press <b>Start</b> again to begin as a new learner, or check the spelling.`); return; }
+    }
+    try { localStorage.setItem("wz-name", name); } catch (err) {}
+    location.reload();
+  });
+  $("#siName").focus();
+}
+
+/* ---------- importing from the local app (Supabase only) ---------- */
+const WORD_ID = /^w_[a-z0-9]{1,40}$/;
+$("#importBtn").addEventListener("click", async () => {
+  const files = [...$("#importFiles").files], status = $("#importStatus");
+  if (!files.length) { status.textContent = "Choose vocabulary.json and/or your progress file first."; return; }
+  let vocab = null, prog = null;
+  try {
+    for (const f of files) {
+      const j = JSON.parse(await f.text());
+      const first = Object.values(j.words || {})[0];
+      // A progress file has history and words without German; the vocabulary has the German.
+      if (j.history || (first && !("de" in first))) prog = j; else if (j.words) vocab = j;
+    }
+  } catch (e) { status.textContent = "That doesn’t look like a file from the local app (" + e.message + ")."; return; }
+  if (!vocab && !prog) { status.textContent = "No words or progress found in that file."; return; }
+  $("#importBtn").disabled = true;
+  try {
+    const parts = [];
+    if (vocab) {
+      const rows = Object.entries(vocab.words || {})
+        .filter(([id, w]) => WORD_ID.test(id) && w.de && w.en && ["", ...ARTS].includes(w.article || ""))
+        .map(([id, w]) => ({ id, ...splitWord(w).dict }));
+      status.textContent = `Adding ${rows.length} words…`;
+      const added = await B.importWords(rows);
+      parts.push(`${added} new word${added === 1 ? "" : "s"}` + (rows.length > added ? ` (${rows.length - added} already in the list)` : ""));
+    }
+    loadData(await B.load());   // progress can only be saved for words that are in the list
+    if (prog) {
+      const rows = Object.entries(prog.words || {}).filter(([id]) => S.words.has(id)).map(([word_id, data]) => ({ word_id, data }));
+      status.textContent = `Saving your progress for ${rows.length} words…`;
+      await B.importProgress(rows);
+      // Days already practised here keep the higher count of each.
+      const days = (prog.history && prog.history.days) || {};
+      for (const [day, counts] of Object.entries(days)) {
+        const cur = S.history[day] || (S.history[day] = {});
+        for (const [k, n] of Object.entries(counts)) cur[k] = Math.max(cur[k] || 0, Number(n) || 0);
+      }
+      await B.putHistory(S.history);
+      const nDays = Object.keys(days).length;
+      parts.push(`your progress for ${rows.length} word${rows.length === 1 ? "" : "s"} and ${nDays} day${nDays === 1 ? "" : "s"} of history`);
+    }
+    loadData(await B.load());
+    renderAll();
+    status.textContent = "Imported " + parts.join(" and ") + ".";
+    $("#importFiles").value = "";
+  } catch (e) { status.textContent = "Import stopped: " + e.message; }
+  finally { $("#importBtn").disabled = false; }
+});
 
 /* ---------- word categories ---------- */
 const CATEGORIES = [
@@ -598,11 +818,33 @@ function renderIdle(){
     <div class="row">
       ${due ? `<button class="btn primary" data-act="start">Start practice</button>`
             : `<button class="btn primary" data-act="extra">Practice anyway</button><span class="muted" style="font-size:.9rem">Nothing is due. Extra rounds still count toward your stats.</span>`}
-    </div>${fetchNote}`;
+    </div>${mixupsHTML(key)}${fetchNote}`;
   }
   el.innerHTML = `<div class="panel">
     <div class="opt"><span class="label">Test</span>${segHTML("test", testGroup(key), PRACTICE_OPTIONS)}</div>
     ${body}</div>`;
+}
+
+/* ---------- mix-ups ----------
+   In every test: the words you've missed there at least MIXUP_MISSES times, until you get
+   them right MIXUP_RUN times in a row in that test. Most-missed first, as many as a round holds.
+   In Mixed: the mix-ups of the included tests, one card per word (its most-missed test). */
+const MIXUP_MISSES = 2, MIXUP_RUN = 3;
+const mixupWords = T => T.pool().filter(w => (w[T.wrong] || 0) >= MIXUP_MISSES && (w[T.run] || 0) < MIXUP_RUN);
+function mixupCards(key){
+  const best = new Map();   // word id -> its most-missed card
+  for (const k of key === "mixed" ? mixParts() : [key]) {
+    const T = TESTS[k];
+    for (const w of mixupWords(T)) if (!best.has(w.id) || w[T.wrong] > best.get(w.id).wrong) best.set(w.id, { id: w.id, test: k, wrong: w[T.wrong] });
+  }
+  return [...best.values()].sort((a, b) => b.wrong - a.wrong).slice(0, prefs.size || undefined).map(({ id, test }) => ({ id, test }));
+}
+function mixupsHTML(key){
+  const n = mixupCards(key).length, all = key === "mixed" ? null : mixupWords(TESTS[key]).length;
+  if (!n) return "";
+  const what = key === "mixed" ? "Words you’ve missed at least " + MIXUP_MISSES + " times in one of these tests" : `${TESTS[key].unit[0].toUpperCase() + TESTS[key].unit.slice(1)} you’ve missed here at least ${MIXUP_MISSES} times`;
+  return `<div class="row"><button class="btn" data-act="mixups">Practise your mix-ups <span class="kbd num">${all && all > n ? `${n} of ${all}` : n}</span></button>
+    <span class="muted" style="font-size:.9rem">${what}. Each one leaves the list after ${MIXUP_RUN} right answers in a row.</span></div>`;
 }
 
 const declOpts = pre => `<div class="opt"><span class="label">${pre}ask for</span>${segHTML("dkmode", dkMode(), [["all","All cases"],["one","One case"]])}</div>
@@ -635,7 +877,7 @@ function renderMixedIdle(el){
       ${nDue ? `<button class="btn primary" data-act="start">Start practice</button>`
              : all.byWord.size ? `<button class="btn primary" data-act="extra">Practice anyway</button><span class="muted" style="font-size:.9rem">Nothing is due in these tests. Extra rounds still count toward your stats.</span>`
              : `<span class="muted">None of your words can be practised in the selected tests yet.</span>`}
-    </div></div>`;
+    </div>${mixupsHTML("mixed")}</div>`;
 }
 
 document.addEventListener("click", e => {
@@ -670,6 +912,8 @@ document.addEventListener("click", e => {
   else if (act === "next") answer(session.cur.ok);
   else if (act === "override") answer(true);
   else if (act === "art") pickArticle(a.dataset.a);
+  else if (act === "fix") checkFix();
+  else if (act === "mixups") startSession(true, mixupCards(currentTest()));
   else if (act === "kn") pickKn(a.dataset.a);
   else if (act === "quit") endSession();
   else if (act === "retry") startSession(false, session.missed);
@@ -688,7 +932,7 @@ const pluralWords = () => nounWords().filter(w => pluralOf(w));
 
 const TESTS = {
   vocab: {
-    box:"box", due:"due", seen:"seen", correct:"correct", wrong:"wrong", hc:"c", hw:"w",
+    box:"box", due:"due", seen:"seen", correct:"correct", wrong:"wrong", run:"run", hc:"c", hw:"w",
     pool: () => [...S.words.values()],
     one:"word is", many:"words are", inList:"in your list", unit:"words",
     doneText:"known on the first try", allText:"Every word on the first try.",
@@ -697,7 +941,7 @@ const TESTS = {
     trickyTitle:"Trickiest words", accLabel:"known, last 30 days",
   },
   articles: {
-    box:"artBox", due:"artDue", seen:"artSeen", correct:"artCorrect", wrong:"artWrong", hc:"ac", hw:"aw",
+    box:"artBox", due:"artDue", seen:"artSeen", correct:"artCorrect", wrong:"artWrong", run:"artRun", hc:"ac", hw:"aw",
     pool: nounWords,
     one:"noun is", many:"nouns are", inList:"nouns in your list", unit:"nouns",
     doneText:"articles right on the first try", allText:"Every article on the first try.",
@@ -706,7 +950,7 @@ const TESTS = {
     trickyTitle:"Trickiest articles", accLabel:"articles right, 30 days",
   },
   plural: {
-    box:"plBox", due:"plDue", seen:"plSeen", correct:"plCorrect", wrong:"plWrong", hc:"pc", hw:"pw",
+    box:"plBox", due:"plDue", seen:"plSeen", correct:"plCorrect", wrong:"plWrong", run:"plRun", hc:"pc", hw:"pw",
     pool: pluralWords,
     one:"noun is", many:"nouns are", inList:"nouns with a plural", unit:"nouns",
     doneText:"plurals right on the first try", allText:"Every plural on the first try.",
@@ -721,7 +965,7 @@ const verbWords = tense => [...S.words.values()].filter(w => w.category === "ver
 for (const [tense, label, pre] of TENSES) {
   TESTS["verbs_" + tense] = {
     tense, label,
-    box:pre+"Box", due:pre+"Due", seen:pre+"Seen", correct:pre+"Correct", wrong:pre+"Wrong", hc:pre+"c", hw:pre+"w",
+    box:pre+"Box", due:pre+"Due", seen:pre+"Seen", correct:pre+"Correct", wrong:pre+"Wrong", run:pre+"Run", hc:pre+"c", hw:pre+"w",
     pool: () => verbWords(tense),
     one:"verb is", many:"verbs are", inList:"verbs in your list", unit:"verbs",
     doneText:`verbs right on the first try (${label})`, allText:"Every verb right on the first try.",
@@ -735,7 +979,7 @@ for (const [decl, label, pre, h, what] of [["indef","Indefinitartikel","in","i",
                                          ["neg","Negativartikel","ne","n","kein, keine"]]) {
   TESTS[decl] = {
     decl, label,
-    box:pre+"Box", due:pre+"Due", seen:pre+"Seen", correct:pre+"Correct", wrong:pre+"Wrong", hc:h+"c", hw:h+"w",
+    box:pre+"Box", due:pre+"Due", seen:pre+"Seen", correct:pre+"Correct", wrong:pre+"Wrong", run:pre+"Run", hc:h+"c", hw:h+"w",
     pool: nounWords,
     one:"noun is", many:"nouns are", inList:"nouns in your list", unit:"nouns",
     doneText:`nouns right on the first try (${what})`, allText:"Every case on the first try.",
@@ -747,7 +991,7 @@ for (const [decl, label, pre, h, what] of [["indef","Indefinitartikel","in","i",
 // Kein or nicht: negate a short sentence built from a noun or an adjective.
 const adjectiveWords = () => [...S.words.values()].filter(w => w.category === "adjective");
 TESTS.keinnicht = {
-  box:"knBox", due:"knDue", seen:"knSeen", correct:"knCorrect", wrong:"knWrong", hc:"kc", hw:"kw",
+  box:"knBox", due:"knDue", seen:"knSeen", correct:"knCorrect", wrong:"knWrong", run:"knRun", hc:"kc", hw:"kw",
   pool: () => nounWords().concat(adjectiveWords()),
   one:"word is", many:"words are", inList:"nouns and adjectives in your list", unit:"words",
   doneText:"right on the first try (kein or nicht)", allText:"Every one right on the first try.",
@@ -831,7 +1075,7 @@ function sessionHeader(s, label, box, again){
     </div>
     <div class="progress"><i style="width:${pct}%"></i></div>`,
     cardTop: `<div class="card-top"><span class="label">${label}</span>
-      ${again ? `<span class="again-tag">Once more</span>` : `<span class="pips" title="Box ${box} of 5">${pips}</span>`}</div>`
+      ${again ? `<span class="again-tag">${typeof again === "string" ? again : "Once more"}</span>` : `<span class="pips" title="Box ${box} of 5">${pips}</span>`}</div>`
   };
 }
 
@@ -895,9 +1139,14 @@ function genderTip(w){
   return "";
 }
 
+const fullNoun = w => w.article + " " + w.de;
+
+
 function renderArticleCard(){
   const s = session, c = s.cur, w = S.words.get(c.id);
-  const h = sessionHeader(s, "Der, die oder das?", w.artBox || 1, c.again);
+  // A noun being relearned says how many right answers in a row it still needs.
+  const again = c.again && `Again · ${RELEARN_RUN - (c.streak || 0)} right to go`;
+  const h = sessionHeader(s, "Der, die oder das?", w.artBox || 1, again);
   let answerBlock = "", after = "";
   if (c.revealed) {
     const tip = genderTip(w);
@@ -907,7 +1156,16 @@ function renderArticleCard(){
       ${w.plural ? `<span class="extra">Plural: ${esc(w.plural)}</span>` : ""}
       ${tip ? `<span class="extra">${esc(tip)}</span>` : ""}
     </div>`;
-    after = `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button></div>`;
+    // After a miss, typing the noun with its article is what moves on: saying it yourself
+    // sticks far better than reading it.
+    after = c.ok
+      ? `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button></div>`
+      : `<div class="typebox">
+          <input id="fix" value="${esc(c.fixTyped || "")}" placeholder="Type “${esc(fullNoun(w))}”" autocomplete="off" autocapitalize="off" spellcheck="false">
+          ${/[äöüß]/i.test(w.de) ? umlautButtons() : ""}
+          <div class="row" style="justify-content:center"><button class="btn primary" data-act="fix">Next <span class="kbd">Enter</span></button></div>
+          <p class="hint ${c.fixWrong ? "verdict miss" : ""}">${c.fixWrong ? `Not quite. Type “${esc(fullNoun(w))}”.` : "Type the noun with its article to move on."}</p>
+        </div>`;
   }
   const buttons = ARTS.map((a, i) => {
     const state = !c.revealed ? "" : a === w.article ? "correct" : a === c.picked ? "wrong" : "dim";
@@ -923,7 +1181,18 @@ function renderArticleCard(){
     </div>
     <div class="artbtns">${buttons}</div>
     ${after}`;
-  const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true });
+  const fix = $("#fix");
+  if (fix) { fix.addEventListener("input", () => { c.fixTyped = fix.value; }); fix.focus(); }
+  else { const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true }); }
+}
+
+function checkFix(){
+  const c = session && session.cur;
+  if (!c || c.test !== "articles" || !c.revealed || c.ok) return;
+  const w = S.words.get(c.id), typed = ($("#fix") || {}).value || "";
+  if (deFold(typed) === deFold(fullNoun(w))) { answer(false); return; }
+  c.fixTyped = typed; c.fixWrong = true;
+  renderArticleCard();
 }
 
 function pickArticle(a){
@@ -1287,6 +1556,15 @@ function checkTyped(){
   c.ok = r.ok; c.msg = r.msg || ""; c.alt = !!r.alt; c.typed = typed.trim(); c.revealed = true; renderCard();
 }
 
+// Der, die, das: a missed noun comes back after a few cards, and again a bit later
+// once it's right, until it's right RELEARN_RUN times in a row. A miss starts over.
+// Only the first answer of the round counts toward boxes and statistics.
+const RELEARN_RUN = 2, RELEARN_GAP = [3, 6];   // cards in between, by right answers so far
+function relearn(s, c, streak){
+  s.queue.splice(Math.min(RELEARN_GAP[streak], s.queue.length), 0, { id:c.id, test:c.test, again:true, streak });
+  s.total++;
+}
+
 function answer(ok){
   const s = session, c = s.cur; if (!c || !c.revealed || c.answered) return;
   c.answered = true;
@@ -1295,6 +1573,8 @@ function answer(ok){
     const h = S.history[t] || (S.history[t] = { c:0, w:0 });
     w[T.seen] = (w[T.seen] || 0) + 1;
     if (c.test === "vocab") w.last = new Date().toISOString();
+    // Right answers in a row in this test; a word leaves its mix-ups after MIXUP_RUN of them.
+    w[T.run] = ok ? (w[T.run] || 0) + 1 : 0;
     if (ok) {
       w[T.correct] = (w[T.correct] || 0) + 1;
       // Extra practice on a word that isn't due doesn't move it up a box.
@@ -1307,8 +1587,16 @@ function answer(ok){
     saveProgress(w); saveHistory();
     s.done++;
     if (ok) s.knew++;
-    else { s.missed.push({ id:c.id, test:c.test }); s.queue.push({ id:c.id, test:c.test, again:true }); s.total++; }
-  } else { s.done++; }
+    else {
+      s.missed.push({ id:c.id, test:c.test });
+      if (c.test === "articles") relearn(s, c, 0);
+      else { s.queue.push({ id:c.id, test:c.test, again:true }); s.total++; }
+    }
+  } else {
+    s.done++;
+    const streak = ok ? (c.streak || 0) + 1 : 0;
+    if (c.test === "articles" && streak < RELEARN_RUN) relearn(s, c, streak);
+  }
   updateCounts();
   nextCard();
 }
@@ -1351,6 +1639,7 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (c.test === "articles") {
+    if (c.revealed && !c.ok) { if (e.key === "Enter") { e.preventDefault(); checkFix(); } return; }
     if (inInput) return;
     const i = ["1","2","3"].indexOf(e.key);
     if (!c.revealed && i >= 0) { e.preventDefault(); pickArticle(ARTS[i]); }
@@ -1415,7 +1704,7 @@ const POS = { Substantiv:"noun", Verb:"verb", Adjektiv:"adjective", Adverb:"adve
               Konjunktion:"conjunction", Pronomen:"pronoun", Personalpronomen:"pronoun", Interjektion:"interjection",
               Numerale:"number", Kardinalzahl:"number", Artikel:"article", Partikel:"particle" };
 let qState = { word:"", results:[] }, qSeq = 0;
-const lookupApi = word => api("GET", "/api/lookup?word=" + encodeURIComponent(word)).then(d => d.results || []);
+const lookupApi = word => B.lookup(word);
 
 $("#quickForm").addEventListener("submit", e => {
   e.preventDefault();
@@ -1673,6 +1962,7 @@ function updateCounts(){ $("#wordCount").textContent = S.words.size ? String(S.w
 function renderAll(){
   updateCounts();
   $("#notice").hidden = !(S.ready && !S.persistent);
+  $("#notice").innerHTML = B.offline;
   if (!session) { $("#practiceIdle").hidden = false; $("#practiceSession").hidden = true; renderIdle(); }
   renderWords(); renderProgress(); renderMistakes();
 }
