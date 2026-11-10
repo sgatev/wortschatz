@@ -319,6 +319,13 @@ async function handle(req, res) {
   }
   // Scripts the page loads: its Supabase settings (empty means "use this server") and,
   // when hosted with Supabase, the Wiktionary lookup.
+  // The logo and the iPhone home-screen icon.
+  const asset = p.match(/^\/assets\/([a-z0-9-]+\.(png|svg))$/);
+  if (req.method === "GET" && asset) {
+    const file = path.join(DIR, "assets", asset[1]);
+    if (!fs.existsSync(file)) return send(res, 404, "Not found", "text/plain");
+    return send(res, 200, await fs.promises.readFile(file), asset[2] === "png" ? "image/png" : "image/svg+xml");
+  }
   if (req.method === "GET" && (p === "/supabase-config.js" || p === "/lookup.js")) {
     const file = path.join(DIR, p.slice(1));
     if (!fs.existsSync(file)) return send(res, 404, "Not found", "text/plain");

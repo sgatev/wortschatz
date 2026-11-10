@@ -20,6 +20,7 @@ Or host it on the web for others, with no server of your own: see [Hosting it on
 - `lookup.js` — looks up a German word on [de.wiktionary.org](https://de.wiktionary.org): article, plural, English meaning, category and verb forms. Used by the server, or by the page itself when hosted.
 - `supabase-config.js` — where the hosted app keeps its data. Empty means "use the local server".
 - `supabase.sql` — sets up the Supabase database for the hosted app (run once). `supabase-class-password.sql` updates a database set up before the class password existed.
+- `assets/` — the logo (`logo.svg`), its exports, and the iPhone home-screen icon (`apple-touch-icon.png`, 180 px).
 - `config.json` — this computer's settings (data folder and your name), written when you use `--data` or `--user`. Not shared.
 
 The data lives in a folder of its own: next to the code by default, or anywhere you point it (such as a shared iCloud folder):
@@ -90,6 +91,7 @@ Things to know:
 - Free Supabase projects are paused after about a week without any use. Restore it from the Supabase dashboard if the page says it can't reach the word list.
 - Once `supabase-config.js` is filled in, `node server.js` uses Supabase too (it then only serves the page). Empty the values to go back to the local files.
 - A word added by someone else shows up in your open page within a couple of seconds (never in the middle of a round).
+- On an iPhone, open the page in Safari, tap **Share** → **Add to Home Screen**: it gets the Wortschatz icon and opens full screen like an app. The home-screen app keeps its own sign-in, so type your name and the class password once more there.
 
 ## Starting over
 
