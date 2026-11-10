@@ -19,7 +19,7 @@ Or host it on the web for others, with no server of your own: see [Hosting it on
 - `server.js` — serves the page and reads/writes the data.
 - `lookup.js` — looks up a German word on [de.wiktionary.org](https://de.wiktionary.org): article, plural, English meaning, category and verb forms. Used by the server, or by the page itself when hosted.
 - `supabase-config.js` — where the hosted app keeps its data. Empty means "use the local server".
-- `supabase.sql` — sets up the Supabase database for the hosted app (run once). `supabase-class-password.sql` updates a database set up before the class password existed.
+- `supabase.sql` — sets up the Supabase database for the hosted app (run once). `supabase-class-password.sql` and `supabase-sync.sql` update a database set up with an older `supabase.sql`.
 - `assets/` — the logo (`logo.svg`), its exports, and the iPhone home-screen icon (`apple-touch-icon.png`, 180 px).
 - `config.json` — this computer's settings (data folder and your name), written when you use `--data` or `--user`. Not shared.
 
@@ -69,7 +69,7 @@ The page can run from GitHub Pages (or any static web host) with the words and p
 **Once, in Supabase:**
 
 1. Create a free account and a new project (pick a region near you, e.g. Frankfurt).
-2. **SQL Editor** → **New query**: paste the whole of `supabase.sql` and press **Run**. It creates the tables for the words, everyone's progress and daily history, and the rule that only the class account gets in. (Ran an older `supabase.sql` without the class password? Then run `supabase-class-password.sql` the same way.)
+2. **SQL Editor** → **New query**: paste the whole of `supabase.sql` and press **Run**. It creates the tables for the words, everyone's progress and daily history, and the rule that only the class account gets in. (Ran an older `supabase.sql`? Then run, the same way, `supabase-class-password.sql` if it had no class password yet, and `supabase-sync.sql` if it has no `deleted_words` table.)
 3. **Authentication** → **Users** → **Add user** → **Create new user**: this is the class account. Give it any email address (nothing is ever sent to it, it can be made up, e.g. `klasse@wortschatz.invalid`) and the class password, and tick **Auto Confirm User**.
    Then **Authentication** → **Sign In / Providers**: switch off **Allow new users to sign up** (and leave **Allow anonymous sign-ins** off). Otherwise anyone could create an account of their own and get in without the class password.
 4. **Project Settings** → **API Keys**: copy the **publishable** key (in older projects: the **anon** key), and from **Data API** the project URL (`https://<project>.supabase.co`; leave off the `/rest/v1/` it shows). Put both in `supabase-config.js`, with the class account's email as `classEmail`. The publishable key is meant for web pages; never use the secret / service_role key there. The class password doesn't go in any file.
@@ -91,6 +91,7 @@ Things to know:
 - Free Supabase projects are paused after about a week without any use. Restore it from the Supabase dashboard if the page says it can't reach the word list.
 - Once `supabase-config.js` is filled in, `node server.js` uses Supabase too (it then only serves the page). Empty the values to go back to the local files.
 - A word added by someone else shows up in your open page within a couple of seconds (never in the middle of a round).
+- Each browser keeps a copy of the words and of your progress, and asks Supabase only for what changed since its last sync: the whole list is downloaded the first time, and then once a week as a check. Opening the page, or someone adding a word, transfers just the changed rows.
 - On an iPhone, open the page in Safari, tap **Share** → **Add to Home Screen**: it gets the Wortschatz icon and opens full screen like an app. The home-screen app keeps its own sign-in, so type your name and the class password once more there.
 
 ## Starting over
@@ -116,7 +117,7 @@ It prints `true` when it worked. Or by hand: select the folder in Finder, **File
 
 Type just the German word (no article) and press Enter. The server fetches the entry from the German Wiktionary and reads the gender (`|Genus=`), the plural (`|Nominativ Plural=`) and the English translations for each numbered meaning. Every distinct meaning becomes its own result (das Land: land / country / soil; die Bank: bench / bank), with Wiktionary's German definition underneath. Meanings whose main English word repeats an earlier one are folded together. The first four show right away; the rest are behind "Show more meanings". Press Enter again to add the top result, or pick another. The German definition is saved as the word's note, so cards for the same word with different meanings can be told apart.
 
-Every word has a category (noun, verb, adjective, adverb, preposition, conjunction, pronoun, number, particle, interjection, article, phrase or other). Lookups fill it in from Wiktionary's part of speech; in the manual form you pick it, and choosing an article makes a word a noun. The word list shows the category on each word and can be filtered by it. Words saved before categories existed get one automatically the next time the page loads: nouns from their article, the rest by a Wiktionary lookup.
+Every word has a category (noun, verb, adjective, adverb, preposition, conjunction, pronoun, number, particle, interjection, article, phrase or other). Lookups fill it in from Wiktionary's part of speech; in the manual form you pick it, and choosing an article makes a word a noun. The word list shows the category on each word and can be filtered by it. It shows 100 words at a time, newest first, with **Show more** for the rest; search and the category filter look through all of them. Words saved before categories existed get one automatically the next time the page loads: nouns from their article, the rest by a Wiktionary lookup.
 
 Verbs also get their conjugation from Wiktionary. Each verb entry lists the ich/du/er present forms, the ich Präteritum, the Partizip II, the plural imperative and the helper verb; the other forms follow regular rules (wir/sie = infinitive, ihr = plural imperative, Präteritum endings from the ich form, Perfekt = haben/sein + participle). Separable verbs keep their particle at the end ("rufe an"). Verbs already in your list get their forms in the background when the page loads, and the word list shows a verb's principal parts (*geht · ging · ist gegangen*).
 

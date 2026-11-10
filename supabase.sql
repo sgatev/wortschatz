@@ -27,6 +27,7 @@ create table public.progress (
   user_name  text not null check (user_name = lower(btrim(user_name)) and length(user_name) between 1 and 40),
   word_id    text not null references public.words (id) on delete cascade,
   data       jsonb not null default '{}',            -- box, due, seen, correct, wrong, artBox, … per test
+  updated    timestamptz not null default now(),
   primary key (user_name, word_id)
 );
 
@@ -43,19 +44,52 @@ begin
 end $$;
 create trigger words_touch before update on public.words
   for each row execute function public.words_touch();
+create trigger progress_touch before update on public.progress
+  for each row execute function public.words_touch();
+
+-- Which words were deleted, and when, so pages that kept a copy can drop them too.
+-- Kept for 180 days (pages fetch everything afresh at least once a week anyway).
+create table public.deleted_words (
+  id       text primary key,
+  deleted  timestamptz not null default now()
+);
+create function public.words_deleted() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into deleted_words (id) values (old.id) on conflict (id) do update set deleted = now();
+  delete from deleted_words where deleted < now() - interval '180 days';
+  return old;
+end $$;
+create trigger words_deleted after delete on public.words
+  for each row execute function public.words_deleted();
+-- A word that comes back (an import of an old list) is no longer deleted.
+create function public.words_undeleted() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  delete from deleted_words where id = new.id;
+  return new;
+end $$;
+create trigger words_undeleted after insert on public.words
+  for each row execute function public.words_undeleted();
+
+-- Pages keep a copy and fetch only what changed since their last visit: a lookup by time.
+create index words_updated on public.words (updated);
+create index progress_user_updated on public.progress (user_name, updated);
+create index deleted_words_deleted on public.deleted_words (deleted);
 
 -- Row level security: only someone signed in to the class account gets anywhere.
 -- The publishable key in the page alone can't read or change anything.
 alter table public.words    enable row level security;
 alter table public.progress enable row level security;
 alter table public.history  enable row level security;
+alter table public.deleted_words enable row level security;
 
 create policy "The class uses the word list" on public.words    for all to authenticated using (true) with check (true);
 create policy "The class keeps progress"     on public.progress for all to authenticated using (true) with check (true);
 create policy "The class keeps history"      on public.history  for all to authenticated using (true) with check (true);
+create policy "The class sees deleted words" on public.deleted_words for select to authenticated using (true);
 
-revoke all on public.words, public.progress, public.history from anon;
+revoke all on public.words, public.progress, public.history, public.deleted_words from anon;
 grant select, insert, update, delete on public.words, public.progress, public.history to authenticated;
+grant select on public.deleted_words to authenticated;
 
 -- Tell open pages right away when someone adds, edits or deletes a word.
 alter publication supabase_realtime add table public.words;

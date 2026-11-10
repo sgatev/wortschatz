@@ -200,6 +200,7 @@ details[open] summary{margin-bottom:10px}
 .words{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .wrow{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .wrow:last-child{border-bottom:0}
+.wmore{display:flex;justify-content:center;padding:14px 0 4px}
 .wmain{min-width:0}
 .wde{font-weight:600;font-size:1.05rem;overflow-wrap:anywhere}
 .wen{color:var(--muted);font-size:.92rem;overflow-wrap:anywhere}
@@ -508,20 +509,31 @@ function splitWord(w){
   if ("forms" in dict && !dict.forms) dict.forms = null;
   return { dict, prog };
 }
-function supabaseBackend(sb){
-  let rev = 0;   // counts changes other pages made to the words, as Realtime reports them
+// The browser keeps a copy of the words and of your progress (localStorage), and asks
+// only for rows changed after the newest change it has seen, by the database's own clock
+// (kept exactly as the database wrote it, to the microsecond). Once a week each device
+// fetches everything afresh: that also catches a change saved in the very same instant
+// as a sync, which "changed after" could miss.
+const SYNC_EVERY = 5 * 60e3, SYNC_FULL = 7 * 864e5;
+function supabaseBackend(sb, url){
+  let rev = 0, lastSync = 0;   // rev counts changes other pages made to the words, as Realtime reports them
   const ok = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
-  // The API returns at most 1000 rows at a time.
-  async function all(table, columns, name){
+  // The API returns at most 1000 rows at a time. `refine` narrows the query (whose rows, since when).
+  async function all(table, columns, order, refine = q => q){
     const rows = [];
     for (let from = 0; ; from += 1000) {
-      let q = sb.from(table).select(columns);
-      if (name) q = q.eq("user_name", name);   // only this person's progress
-      const page = ok(await q.order(table === "words" ? "id" : "word_id").range(from, from + 999));
+      const page = ok(await refine(sb.from(table).select(columns)).order(order).range(from, from + 999));
       rows.push(...page);
       if (page.length < 1000) return rows;
     }
   }
+  // The newest time as the database wrote it ("2026-11-10T10:00:00.123456+00:00").
+  const newest = (rows, field, cur) => rows.reduce((m, r) => !m || Date.parse(r[field]) > Date.parse(m) || (Date.parse(r[field]) === Date.parse(m) && r[field] > m) ? r[field] : m, cur || null);
+  const cacheKey = name => "wz-cache-v1:" + url + (name ? ":" + name : "");
+  const readCache = key => { try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } };
+  const writeCache = (key, v) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} };   // full or blocked: just no copy
+  const fresh = c => c && c.full && Date.now() - c.full < SYNC_FULL ? c : null;
+
   sb.channel("words").on("postgres_changes", { event:"*", schema:"public", table:"words" }, () => {
     rev++;
     clearTimeout(supabaseBackend._t); supabaseBackend._t = setTimeout(checkForChanges, 1500);
@@ -529,16 +541,30 @@ function supabaseBackend(sb){
   const me = () => S.me.name;
   return {
     async load(){
-      const at = rev;
-      const [words, progress, history] = await Promise.all([
-        all("words", "*"), all("progress", "word_id,data", me()),
+      const at = rev; lastSync = Date.now();
+      const wc = fresh(readCache(cacheKey())) || { words:{}, since:null, deletedSince:null, full:Date.now() };
+      const pc = fresh(readCache(cacheKey(me()))) || { rows:{}, since:null, full:Date.now() };
+      const [words, gone, progress, history] = await Promise.all([
+        all("words", "*", "id", q => wc.since ? q.gt("updated", wc.since) : q),
+        wc.since ? all("deleted_words", "id,deleted", "id", q => q.gt("deleted", wc.deletedSince || wc.since)) : [],
+        all("progress", "word_id,data,updated", "word_id", q => { q = q.eq("user_name", me()); return pc.since ? q.gt("updated", pc.since) : q; }),
         sb.from("history").select("days").eq("user_name", me()).maybeSingle().then(ok)]);
+      for (const g of gone) delete wc.words[g.id];
+      for (const { id, ...w } of words) wc.words[id] = w;
+      wc.since = newest(words, "updated", wc.since);
+      wc.deletedSince = newest(gone, "deleted", wc.deletedSince || wc.since);
+      for (const p of progress) pc.rows[p.word_id] = p.data;
+      pc.since = newest(progress, "updated", pc.since);
+      for (const id of Object.keys(pc.rows)) if (!wc.words[id]) delete pc.rows[id];   // deleted words take their progress along
+      writeCache(cacheKey(), wc); writeCache(cacheKey(me()), pc);
       const out = {};
-      for (const { id, forms, ...w } of words) out[id] = forms ? { ...w, forms } : w;
-      for (const p of progress) if (out[p.word_id]) Object.assign(out[p.word_id], p.data);
+      for (const [id, { forms, ...w }] of Object.entries(wc.words)) out[id] = forms ? { ...w, forms } : { ...w };
+      for (const [id, data] of Object.entries(pc.rows)) if (out[id]) Object.assign(out[id], data);
       return { words: out, history: { days: (history && history.days) || {} }, rev: at };
     },
-    version: async () => rev,
+    // Realtime tells us when the words change; every few minutes we also check anyway,
+    // in case the connection dropped (a phone asleep, a laptop closed).
+    version: async () => rev + (Date.now() - lastSync > SYNC_EVERY ? 1 : 0),
     async putWord(id, w){
       const { dict, prog } = splitWord(w);
       ok(await sb.from("words").upsert({ id, ...dict }));
@@ -607,7 +633,7 @@ async function initStore(){
       // Signed out from elsewhere (the class account was replaced): ask for the password again.
       sb.auth.onAuthStateChange(event => { if (event === "SIGNED_OUT") location.reload(); });
     }
-    B = supabaseBackend(sb);
+    B = supabaseBackend(sb, cfg.url);
     if (!name || !signedIn) { showSignIn(sb, cfg.classEmail, signedIn, name); return; }
     S.me = { name };
     $("#account").innerHTML = `Practising as <b>${esc(name)}</b> · <button class="btn link" type="button" id="signOut">Not you?</button>`;
@@ -1871,9 +1897,13 @@ $("#bulkAdd").addEventListener("click", async () => {
   toast(`Added ${added} word${added === 1 ? "" : "s"}${dup ? `, skipped ${dup} already in your list` : ""}.`);
 });
 
-$("#search").addEventListener("input", renderWords);
+// The word list shows WORDS_PAGE words at a time; search and filters cover them all.
+const WORDS_PAGE = 100;
+let wordsShown = WORDS_PAGE;
+$("#search").addEventListener("input", () => { wordsShown = WORDS_PAGE; renderWords(); });
 $("#wordList").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.w === "more") { wordsShown += WORDS_PAGE; renderWords(); return; }
   const id = b.closest("[data-id]").dataset.id;
   if (b.dataset.w === "edit") startEdit(id);
   else if (b.dataset.w === "del") { confirmId = id; renderWords(); }
@@ -1900,7 +1930,7 @@ function renderCatFilter(){
 }
 $("#catFilter").addEventListener("click", e => {
   const b = e.target.closest("[data-cat]"); if (!b) return;
-  catFilter = b.dataset.cat; renderWords();
+  catFilter = b.dataset.cat; wordsShown = WORDS_PAGE; renderWords();
 });
 
 function renderWords(){
@@ -1913,7 +1943,8 @@ function renderWords(){
     .filter(w => !q || norm(w.article + " " + w.de).includes(q) || norm(w.en).includes(q));
   if (!S.words.size) { list.innerHTML = `<li class="empty"><p class="muted">No words yet. Add one above, or start with a small set.</p><button class="btn" data-act="starters">Add 12 starter words</button></li>`; return; }
   if (!words.length) { list.innerHTML = `<li class="empty muted">${q ? `No words match “${esc($("#search").value)}”${catFilter ? " in this category" : ""}.` : "No words in this category."}</li>`; return; }
-  list.innerHTML = words.map(w => {
+  const more = words.length - wordsShown;
+  list.innerHTML = words.slice(0, wordsShown).map(w => {
     const pips = [1,2,3,4,5].map(i => `<i class="${i <= (w.box||1) ? "on" : ""}"></i>`).join("");
     const acc = w.seen ? `${Math.round((w.correct || 0) / w.seen * 100)}% of ${w.seen}` : "not tested yet";
     const act = confirmId === w.id
@@ -1924,7 +1955,7 @@ function renderWords(){
         <div class="wen">${esc(w.en)}${w.note ? ` · <i>${esc(w.note)}</i>` : ""}</div></div>
       <div class="wmeta"><span class="pips" title="Box ${w.box||1} of 5">${pips}</span><span class="acc num">${acc}</span></div>
       ${act}</li>`;
-  }).join("");
+  }).join("") + (more > 0 ? `<li class="wmore"><button class="btn" type="button" data-w="more">Show ${Math.min(more, WORDS_PAGE)} more <span class="muted">· ${more} not shown</span></button></li>` : "");
 }
 
 /* ---------- progress ---------- */
