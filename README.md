@@ -19,7 +19,7 @@ Or host it on the web for others, with no server of your own: see [Hosting it on
 - `server.js` — serves the page and reads/writes the data.
 - `lookup.js` — looks up a German word on [de.wiktionary.org](https://de.wiktionary.org): article, plural, English meaning, category and verb forms. Used by the server, or by the page itself when hosted.
 - `supabase-config.js` — where the hosted app keeps its data. Empty means "use the local server".
-- `supabase.sql` — sets up the Supabase database for the hosted app (run once).
+- `supabase.sql` — sets up the Supabase database for the hosted app (run once). `supabase-class-password.sql` updates a database set up before the class password existed.
 - `config.json` — this computer's settings (data folder and your name), written when you use `--data` or `--user`. Not shared.
 
 The data lives in a folder of its own: next to the code by default, or anywhere you point it (such as a shared iCloud folder):
@@ -63,27 +63,32 @@ Everyone shares one word list and has their own progress. Each person runs the a
 
 ## Hosting it on GitHub Pages
 
-The page can run from GitHub Pages (or any static web host) with the words and progress kept in [Supabase](https://supabase.com), a hosted database with a free plan. There's no server to run and no accounts: everyone types their name, shares one word list that anyone can add to, edit and delete from, and has their own boxes and statistics under that name, on any device. Lookups go from the page straight to Wiktionary.
+The page can run from GitHub Pages (or any static web host) with the words and progress kept in [Supabase](https://supabase.com), a hosted database with a free plan. There's no server to run. It's made for a class or a small group: everyone signs in once with a shared **class password**, shares one word list that anyone in the class can add to, edit and delete from, and has their own boxes and statistics under their name, on any device. Lookups go from the page straight to Wiktionary.
 
 **Once, in Supabase:**
 
-1. Create a free account and a new project.
-2. **SQL Editor** → **New query**: paste the whole of `supabase.sql` and press **Run**. It creates the tables for the words, everyone's progress and daily history.
-3. **Project Settings** → **API Keys**: copy the **publishable** key (in older projects: the **anon** key), and from **Data API** the project URL. Put both in `supabase-config.js`. The publishable key is meant for web pages; never use the secret / service_role key there.
+1. Create a free account and a new project (pick a region near you, e.g. Frankfurt).
+2. **SQL Editor** → **New query**: paste the whole of `supabase.sql` and press **Run**. It creates the tables for the words, everyone's progress and daily history, and the rule that only the class account gets in. (Ran an older `supabase.sql` without the class password? Then run `supabase-class-password.sql` the same way.)
+3. **Authentication** → **Users** → **Add user** → **Create new user**: this is the class account. Give it any email address (nothing is ever sent to it, it can be made up, e.g. `klasse@wortschatz.invalid`) and the class password, and tick **Auto Confirm User**.
+   Then **Authentication** → **Sign In / Providers**: switch off **Allow new users to sign up** (and leave **Allow anonymous sign-ins** off). Otherwise anyone could create an account of their own and get in without the class password.
+4. **Project Settings** → **API Keys**: copy the **publishable** key (in older projects: the **anon** key), and from **Data API** the project URL (`https://<project>.supabase.co`; leave off the `/rest/v1/` it shows). Put both in `supabase-config.js`, with the class account's email as `classEmail`. The publishable key is meant for web pages; never use the secret / service_role key there. The class password doesn't go in any file.
 
 **Then, on GitHub:**
 
-4. Commit `supabase-config.js` and push the repository to GitHub.
-5. **Settings** → **Pages** → **Build and deployment**: deploy from the `main` branch, folder `/ (root)`. After a minute the app is at `https://<your-user>.github.io/<repository>/`.
+5. Commit `supabase-config.js` and push the repository to GitHub.
+6. **Settings** → **Pages** → **Build and deployment**: deploy from the `main` branch, folder `/ (root)`. After a minute the app is at `https://<your-user>.github.io/<repository>/`.
 
-**Moving your words over:** open the page and type your name (a name nobody has used yet asks you to press **Start** a second time, so a typo doesn't start an empty profile). Then on the **Words** tab open **Import from the Mac app** and choose `vocabulary.json` and your `progress-<name>.json` (from your data folder, e.g. the shared iCloud folder). Words already in the list are left as they are, and progress is only imported for words that are in it. The other person types their own name and imports just their own `progress-<name>.json`. The name is remembered in the browser; **Not you?** at the bottom of the page switches to another name.
+Send the class the link and the class password. The first time, everyone types their name and the class password; the browser remembers both. A name nobody has used yet asks you to press **Start** a second time, so a typo doesn't start an empty profile. **Not you?** at the bottom of the page switches to another name (the class password isn't asked again).
+
+**Moving your words over:** sign in, then on the **Words** tab open **Import from the Mac app** and choose `vocabulary.json` and your `progress-<name>.json` (from your data folder, e.g. the shared iCloud folder). Words already in the list are left as they are, and progress is only imported for words that are in it. To bring over someone else's progress from the same Mac, press **Not you?**, type their name and import just their `progress-<name>.json`.
 
 Things to know:
 
-- Names aren't protected: anyone who types "anna" practises as Anna and changes her statistics. And anyone who has the link can change the word list. Supabase keeps daily backups on paid plans only, so export now and then (Supabase: **Table Editor** → `words` → **Export to CSV**), or keep the old `vocabulary.json`.
-- On a free GitHub account, Pages needs a public repository, so the code and `supabase-config.js` are public. With the key in it, anyone can read and change the words and progress, just as anyone with the link to the page can. Only use this for things you don't mind being public.
+- Without the class password, the page shows nothing and nobody can change anything, even though the code and `supabase-config.js` are public (on a free GitHub account, Pages needs a public repository).
+- Within the class, names aren't protected: anyone who types "anna" practises as Anna. And anyone in the class can change or delete words. Supabase keeps daily backups on paid plans only, so export now and then (Supabase: **Table Editor** → `words` → **Export to CSV**), or keep the old `vocabulary.json`.
+- To change the class password and sign out every browser, delete the class account under **Authentication** → **Users** and create a new one with the new password (same email). Only changing the password keeps browsers that are already signed in.
 - Free Supabase projects are paused after about a week without any use. Restore it from the Supabase dashboard if the page says it can't reach the word list.
-- Once `supabase-config.js` is filled in, `node server.js` uses Supabase too (it then only serves the page). Empty the two values to go back to the local files.
+- Once `supabase-config.js` is filled in, `node server.js` uses Supabase too (it then only serves the page). Empty the values to go back to the local files.
 - A word added by someone else shows up in your open page within a couple of seconds (never in the middle of a round).
 
 ## Starting over

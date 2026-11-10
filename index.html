@@ -272,9 +272,10 @@ details[open] summary{margin-bottom:10px}
   <section id="view-signin" class="stack" hidden>
     <div class="panel">
       <h2>Who’s practising?</h2>
-      <p class="muted" style="max-width:60ch">Everyone here shares one word list and can add to it. Your boxes and statistics are kept under your name: use the same name on any device to pick up where you left off.</p>
-      <form id="signinForm" class="stack" autocomplete="off" style="max-width:360px">
-        <div class="field"><label class="label" for="siName">Your name</label><input id="siName" maxlength="40" autocapitalize="off" spellcheck="false" required></div>
+      <p class="muted" style="max-width:60ch">Everyone in the class shares one word list and can add to it. Your boxes and statistics are kept under your name: use the same name on any device to pick up where you left off.</p>
+      <form id="signinForm" class="stack" style="max-width:360px">
+        <div class="field" id="siNameField"><label class="label" for="siName">Your name</label><input id="siName" maxlength="40" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="field" id="siPassField" hidden><label class="label" for="siPass">Class password</label><input id="siPass" type="password" autocomplete="current-password"></div>
         <div class="row"><button class="btn primary" type="submit">Start</button></div>
         <p class="muted" id="siStatus" style="font-size:.9rem" aria-live="polite"></p>
       </form>
@@ -562,13 +563,19 @@ async function initStore(){
     let sb;
     try {
       await Promise.all([loadScript(SUPABASE_JS, SUPABASE_SRI), loadScript("lookup.js")]);
-      // No accounts: the publishable key and the rules in supabase.sql are all it takes.
-      sb = window.supabase.createClient(cfg.url, cfg.anonKey, { auth: { persistSession:false, autoRefreshToken:false } });
+      // With a class account, this browser stays signed in to it (Supabase keeps the session).
+      // The Data API page shows the URL with "/rest/v1/"; the client wants the project's own address.
+      sb = window.supabase.createClient(cfg.url.trim().replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, ""), cfg.anonKey);
     } catch (e) { B = { offline: SUPABASE_OFFLINE }; S.ready = true; renderAll(); return; }   // no connection to the CDN
-    let name = null;
+    let name = null, signedIn = !cfg.classEmail;
     try { name = localStorage.getItem("wz-name"); } catch (e) {}
+    if (!signedIn) {
+      try { signedIn = !!(await sb.auth.getSession()).data.session; } catch (e) {}
+      // Signed out from elsewhere (the class account was replaced): ask for the password again.
+      sb.auth.onAuthStateChange(event => { if (event === "SIGNED_OUT") location.reload(); });
+    }
     B = supabaseBackend(sb);
-    if (!name) { showSignIn(); return; }
+    if (!name || !signedIn) { showSignIn(sb, cfg.classEmail, signedIn, name); return; }
     S.me = { name };
     $("#account").innerHTML = `Practising as <b>${esc(name)}</b> · <button class="btn link" type="button" id="signOut">Not you?</button>`;
     $("#account").hidden = false;
@@ -606,21 +613,40 @@ async function checkForChanges(){
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S.persistent) checkForChanges(); });
 
-/* ---------- picking a name (Supabase only) ----------
-   The name is remembered in this browser. A name nobody has used yet needs a second
-   press of Start, so a typo ("Ana" for "Anna") doesn't quietly start an empty profile. */
+/* ---------- the class password and picking a name (Supabase only) ----------
+   The class password signs this browser in to the class account, once. The name is
+   remembered in this browser too. A name nobody has used yet needs a second press of
+   Start, so a typo ("Ana" for "Anna") doesn't quietly start an empty profile. */
 const nameKey = s => s.trim().toLowerCase().replace(/\s+/g, " ");
-function showSignIn(){
+function showSignIn(sb, classEmail, signedIn, knownName){
   document.querySelector(".tabs").hidden = true;
   ["practice","words","progress"].forEach(t => $("#view-"+t).hidden = true);
   $("#view-signin").hidden = false;
+  $("#siPassField").hidden = signedIn;
+  $("#siNameField").hidden = !!knownName;
   const status = msg => { $("#siStatus").innerHTML = msg; };
   let confirmNew = "";
   $("#siName").addEventListener("input", () => { confirmNew = ""; status(""); });
   $("#signinForm").addEventListener("submit", async e => {
     e.preventDefault();
-    const name = nameKey($("#siName").value);
-    if (!name) return;
+    const name = knownName || nameKey($("#siName").value);
+    if (!name) { status("Type your name."); $("#siName").focus(); return; }
+    if (!signedIn) {
+      const password = $("#siPass").value;
+      if (!password) { status("Type the class password."); $("#siPass").focus(); return; }
+      status("Checking the class password…");
+      let error;
+      try { ({ error } = await sb.auth.signInWithPassword({ email: classEmail, password })); } catch (err) { error = err; }
+      if (error) {
+        // Only a wrong email or password is "invalid_credentials"; show anything else as it is,
+        // so a mistake in supabase-config.js doesn't look like a wrong password.
+        const wrong = error.code === "invalid_credentials" || error.message === "Invalid login credentials";
+        status(wrong ? "That’s not the class password." : `Couldn’t sign in: ${esc(error.message || SUPABASE_OFFLINE)}`);
+        $("#siPass").select(); return;
+      }
+      signedIn = true; $("#siPassField").hidden = true; status("");
+    }
+    if (knownName) { location.reload(); return; }
     if (confirmNew !== name) {
       let used;
       try { used = await B.nameInUse(name); } catch (err) { status(esc(SUPABASE_OFFLINE)); return; }
@@ -629,7 +655,7 @@ function showSignIn(){
     try { localStorage.setItem("wz-name", name); } catch (err) {}
     location.reload();
   });
-  $("#siName").focus();
+  (knownName ? $("#siPass") : $("#siName")).focus();
 }
 
 /* ---------- importing from the local app (Supabase only) ---------- */
