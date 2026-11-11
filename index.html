@@ -900,7 +900,7 @@ function renderIdle(){
       <div class="opt"><span class="label">Ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
       ${key === "articles" ? artfixOpt("") : ""}
       ${T.decl ? `<div class="opt"><span class="label">Article</span>${segHTML("decl", T.decl, DECL_KINDS)}</div>${declOpts("")}` : ""}
-      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"]])}</div>
+      ${sizeOpt()}
     </div>
     <div class="row">
       ${due ? `<button class="btn primary" data-act="start">Start practice</button>`
@@ -924,8 +924,10 @@ function mixupCards(key){
     const T = TESTS[k];
     for (const w of mixupWords(T)) if (!best.has(w.id) || w[T.wrong] > best.get(w.id).wrong) best.set(w.id, { id: w.id, test: k, wrong: w[T.wrong] });
   }
-  return [...best.values()].sort((a, b) => b.wrong - a.wrong).slice(0, prefs.size || undefined).map(({ id, test }) => ({ id, test }));
+  return [...best.values()].sort((a, b) => b.wrong - a.wrong).slice(0, prefs.size > 0 ? prefs.size : undefined).map(({ id, test }) => ({ id, test }));
 }
+const sizeOpt = () => `<div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"],[-1,"∞"]])}
+      ${prefs.size === -1 ? `<span class="hint" style="text-align:left">Keeps going until you press End round.</span>` : ""}</div>`;
 function mixupsHTML(key){
   const n = mixupCards(key).length, all = key === "mixed" ? null : mixupWords(TESTS[key]).length;
   if (!n) return "";
@@ -959,7 +961,7 @@ function renderMixedIdle(el){
       ${anyVerbs ? `<div class="opt"><span class="label">Verbs: ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
       ${anyArticles ? artfixOpt("Articles: ") : ""}
       ${anyDecl ? declOpts("Ein, mein, kein: ") : ""}
-      <div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"]])}</div>
+      ${sizeOpt()}
     </div>
     <div class="row">
       ${nDue ? `<button class="btn primary" data-act="start">Start practice</button>`
@@ -1001,7 +1003,7 @@ document.addEventListener("click", e => {
   else if (act === "override") answer(true);
   else if (act === "art") pickArticle(a.dataset.a);
   else if (act === "fix") checkFix();
-  else if (act === "mixups") startSession(true, mixupCards(currentTest()));
+  else if (act === "mixups") { const key = currentTest(); startSession(true, mixupCards(key), () => [mixupCards(key)]); }
   else if (act === "kn") pickKn(a.dataset.a);
   else if (act === "quit") endSession();
   else if (act === "retry") startSession(false, session.missed);
@@ -1122,32 +1124,62 @@ function mixCandidates(extra, parts = mixParts()){
 const boxIn = (w, T) => w[T.box] || 1;
 const isDue = (w, T) => (w[T.due] || "") <= today();
 
-// `only`: a list of {id, test} cards to go over again (the "Practice these again" button).
-function startSession(extra, only){
-  const key = currentTest();
-  let cards;
-  if (only) cards = only.filter(c => S.words.has(c.id) && TESTS[c.test]);
-  else if (key === "mixed") {
+function roundCards(key, extra){
+  if (key === "mixed") {
     // One card per word: a random one of the tests it's due in.
     const { byWord } = mixCandidates(extra);
-    cards = [...byWord].map(([id, tests]) => ({ id, test: tests[Math.floor(Math.random() * tests.length)] }));
-  } else {
-    const T = TESTS[key];
-    cards = (extra ? T.pool() : T.pool().filter(w => isDue(w, T))).map(w => ({ id: w.id, test: key }));
+    return [...byWord].map(([id, tests]) => ({ id, test: tests[Math.floor(Math.random() * tests.length)] }));
   }
-  const boxOf = c => boxIn(S.words.get(c.id), TESTS[c.test]);
-  cards = shuffle(cards).sort((a, b) => boxOf(a) - boxOf(b));
-  if (!only && prefs.size) cards = cards.slice(0, prefs.size);
+  const T = TESTS[key];
+  return (extra ? T.pool() : T.pool().filter(w => isDue(w, T))).map(w => ({ id: w.id, test: key }));
+}
+const cardBox = c => boxIn(S.words.get(c.id), TESTS[c.test]);
+
+// `only`: a list of {id, test} cards to go over (the "Practice these again" button, the mix-ups).
+// `refill`: for an endless round of `only` cards, gives the cards to continue with.
+function startSession(extra, only, refill){
+  const key = currentTest();
+  const endless = prefs.size === -1 && (!only || !!refill);
+  let cards = only ? only.filter(c => S.words.has(c.id) && TESTS[c.test]) : roundCards(key, extra);
+  cards = shuffle(cards).sort((a, b) => cardBox(a) - cardBox(b));
+  if (!only && prefs.size) cards = cards.slice(0, endless ? STREAM_BATCH : prefs.size);
   if (!cards.length) return;
-  session = { test:key, queue: cards.map(c => ({ ...c, again:false })), total:cards.length, done:0, knew:0, missed:[], cur:null, finished:false };
+  session = { test:key, queue: cards.map(c => ({ ...c, again:false })), total:cards.length, done:0, knew:0, missed:[], cur:null, finished:false,
+              refill: endless ? refill || (() => [roundCards(key, false), roundCards(key, true)]) : null, shown:new Map(), recent:[] };
   $("#practiceIdle").hidden = true; $("#practiceSession").hidden = false;
   nextCard();
 }
 
+// An endless round tops itself up as it goes: what's due first, then the words seen least
+// in this round (lowest boxes first), so it goes through everything before repeating.
+// Keeping a few cards queued leaves room for a missed noun to come back a few cards later.
+const STREAM_BATCH = 20, STREAM_LOW = 8, STREAM_RECENT = 10;
+function topUp(s){
+  if (s.queue.length >= STREAM_LOW) return;
+  const groups = s.refill(), queued = new Set(s.queue.map(c => c.id)), recent = new Set(s.recent);
+  const times = c => s.shown.get(c.id) || 0;
+  const add = cards => {
+    const order = shuffle(cards).sort((a, b) => times(a) - times(b) || cardBox(a) - cardBox(b)).slice(0, STREAM_BATCH);
+    for (const c of order) { s.queue.push({ ...c, again:false }); queued.add(c.id); }
+  };
+  for (const group of groups) {
+    if (s.queue.length >= STREAM_LOW) break;
+    add(group.filter(c => S.words.has(c.id) && !queued.has(c.id) && !recent.has(c.id)));
+  }
+  // Only a handful of words: repeat them rather than stop.
+  if (!s.queue.length) add(groups.flat().filter((c, i, all) => S.words.has(c.id) && all.findIndex(o => o.id === c.id) === i));
+}
+
 function nextCard(){
+  if (session.refill) topUp(session);
   let c;
   while ((c = session.queue.shift()) && !S.words.has(c.id)) {}
   if (!c) { finishSession(); return; }
+  if (session.refill) {
+    session.shown.set(c.id, (session.shown.get(c.id) || 0) + 1);
+    session.recent.push(c.id);
+    if (session.recent.length > STREAM_RECENT) session.recent.shift();
+  }
   const dir = prefs.dir === "mix" ? (Math.random() < .5 ? "de-en" : "en-de") : prefs.dir;
   session.cur = { ...c, dir, revealed:false, ok:null, msg:"", picked:null, typed:"" };
   renderCard();
@@ -1158,10 +1190,10 @@ function sessionHeader(s, label, box, again){
   const pips = [1,2,3,4,5].map(i => `<i class="${i <= box ? "on" : ""}"></i>`).join("");
   return {
     top: `<div class="row" style="justify-content:space-between">
-      <span class="label num">Card ${Math.min(s.done+1, s.total)} of ${s.total}</span>
+      <span class="label num">${s.refill ? `Card ${s.done+1} · ${s.knew} right` : `Card ${Math.min(s.done+1, s.total)} of ${s.total}`}</span>
       <button class="btn link" data-act="quit">End round</button>
     </div>
-    <div class="progress"><i style="width:${pct}%"></i></div>`,
+    ${s.refill ? "" : `<div class="progress"><i style="width:${pct}%"></i></div>`}`,
     cardTop: `<div class="card-top"><span class="label">${label}</span>
       ${again ? `<span class="again-tag">${typeof again === "string" ? again : "Once more"}</span>` : `<span class="pips" title="Box ${box} of 5">${pips}</span>`}</div>`
   };
@@ -1695,7 +1727,8 @@ function answer(ok){
 function finishSession(){
   const s = session, mixed = s.test === "mixed", T = mixed ? MIXED_TEXT : TESTS[s.test]; s.finished = true;
   const graded = s.knew + s.missed.length;
-  const missed = s.missed.filter(m => S.words.has(m.id));
+  const missed = s.missed.filter((m, i, all) => S.words.has(m.id) && all.findIndex(o => o.id === m.id && o.test === m.test) === i);
+  s.missed = missed;
   const partLabel = test => (MIX_PARTS.find(([k]) => k === test) || [, ""])[1];
   const detail = ({ id, test }) => {
     const w = S.words.get(id);

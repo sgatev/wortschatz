@@ -144,6 +144,8 @@ There are six tests, plus a mixed round, picked with the switch at the top of th
 
 Each test has its own boxes, schedule and statistics, since knowing what a word means says nothing about remembering its article, plural or conjugation. The Progress tab has the same switch. Above the switch, **Most frequent mistakes** ranks everything you've missed across all tests at once (a word can appear once per test), by how many times you've missed it, with the miss rate breaking ties. It shows the top 10, with a button to see the rest.
 
+**Cards per round** can be 10, 20, 40, All or **∞**. An endless round starts with what's due and then carries on through the rest of the test's words, least-seen in this round first (lowest boxes first), so it goes through everything before repeating. It runs until you press **End round**, and answers count as usual: a right answer moves a word up a box only if it was due. A mix-ups round on ∞ keeps going until its list is empty.
+
 Each word sits in one of five boxes. Knowing a word moves it up a box; missing it sends it back to box 1. Higher boxes come back less often: every day, next day, 3 days, 1 week, 16 days. A round shows the words that are due today, lowest boxes first. Cards you miss come back once more at the end of the round.
 
 Keys (vocabulary): `Space` shows the answer, `1` = didn't know, `2` = knew it. In typing mode, `Enter` checks and moves on. When typing German, `ae`, `oe`, `ue` and `ss` are accepted for ä, ö, ü and ß.
