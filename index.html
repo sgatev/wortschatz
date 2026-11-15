@@ -96,6 +96,18 @@ button,input,select,textarea{font:inherit;color:inherit}
 .seg button{flex:1;border:0;background:transparent;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:.88rem;color:var(--muted);white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(var(--shadow),.08)}
 
+/* test picker: the tests in groups, each with its due count */
+.picker{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.pgroup{display:flex;flex-direction:column;gap:4px;min-width:0}
+.pname{font-size:.74rem;color:var(--muted)}
+.picker button{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 10px;font-size:.88rem;cursor:pointer;color:var(--ink);text-align:left}
+.picker button:hover{border-color:var(--muted)}
+.picker button .n{font-family:var(--f-mono);font-size:.76rem;color:var(--muted)}
+.picker button .n.zero{opacity:.5}
+.picker button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:600}
+.picker button[aria-pressed="true"] .n{color:var(--bg)}
+@media (max-width:620px){.picker{grid-template-columns:repeat(2,1fr)}}
+
 /* practice summary */
 .due{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .due .big{font-family:var(--f-display);font-size:3rem;font-weight:800;line-height:1}
@@ -260,6 +272,7 @@ details[open] summary{margin-bottom:10px}
   .tab{padding:10px 14px}
   .seg button{padding:10px 8px}
   .catfilter button{padding:7px 13px}
+  .picker button{padding:10px}
   .icon{padding:11px}
   .btn.link{padding:10px 6px}
   input,select,textarea{font-size:16px}
@@ -912,7 +925,7 @@ function renderIdle(){
     </div>${mixupsHTML(key)}${fetchNote}`;
   }
   el.innerHTML = `<div class="panel">
-    <div class="opt"><span class="label">Test</span>${segHTML("test", testGroup(key), PRACTICE_OPTIONS)}</div>
+    ${testPicker(testGroup(key))}
     ${body}</div>`;
 }
 
@@ -955,7 +968,7 @@ function renderMixedIdle(el){
   }).join("");
   const anyVerbs = on.some(k => k.startsWith("verbs_")), anyVocab = on.includes("vocab"), anyDecl = on.some(k => TESTS[k].decl), anyArticles = on.includes("articles");
   el.innerHTML = `<div class="panel">
-    <div class="opt"><span class="label">Test</span>${segHTML("test", "mixed", PRACTICE_OPTIONS)}</div>
+    ${testPicker("mixed")}
     <div class="due"><span class="big num">${nDue}</span><span>${nDue === 1 ? "word has" : "words have"} something due <span class="muted">· across ${on.length} test${on.length === 1 ? "" : "s"}</span></span></div>
     <div class="opt"><span class="label">Include</span><div class="catfilter mixparts" role="group" aria-label="Tests to include">${chips}</div>
       <span class="hint" style="text-align:left">The numbers are what’s due in each test. Answers count toward each test’s own statistics.</span></div>
@@ -1109,7 +1122,23 @@ const tenseKey = () => TENSES.some(t => t[0] === prefs.tense) ? prefs.tense : "p
 const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : name === "decl" ? declKind() : TESTS[name] ? name : "vocab";
 const testGroup = key => key.startsWith("verbs_") ? "verbs" : TESTS[key] && TESTS[key].decl ? "decl" : key;
 const currentTest = () => prefs.test === "mixed" ? "mixed" : testKey(prefs.test);
-const PRACTICE_OPTIONS = TEST_OPTIONS.concat([["mixed","Mixed"]]);
+// The Practice tab's test picker: the tests in groups, each with what's due in it
+// (for Verbs and Ein, mein, kein: in the tense / article you'd land on).
+const PRACTICE_GROUPS = [["Words", ["vocab","verbs"]], ["Nouns", ["articles","plural"]],
+                         ["Articles & cases", ["decl","akk","keinnicht"]], ["All together", ["mixed"]]];
+function testPicker(current){
+  const label = Object.fromEntries(TEST_OPTIONS.concat([["mixed","Mixed"]]));
+  const due = g => {
+    if (g === "mixed") return mixCandidates(false).byWord.size;
+    const T = TESTS[testKey(g)];
+    return T.pool().filter(w => isDue(w, T)).length;
+  };
+  return `<div class="opt"><span class="label">Test</span><div class="picker" role="group" aria-label="Test">${
+    PRACTICE_GROUPS.map(([name, groups]) => `<div class="pgroup"><span class="pname">${name}</span>${
+      groups.map(g => { const n = due(g);
+        return `<button type="button" data-pref="test" data-val="${g}" aria-pressed="${g === current}">${label[g]}<span class="n${n ? "" : " zero"}">${n}</span></button>`; }).join("")
+    }</div>`).join("")}</div></div>`;
+}
 
 /* ---------- mixed test: due cards from every test in one round ----------
    Each card is still scored in its own test (boxes, history), so a mixed round
@@ -1468,13 +1497,15 @@ function renderAkkCard(){
   if (!c.akk) c.akk = akkCard(w);
   const k = c.akk, answers = akkAnswers(w, k);
   const h = sessionHeader(s, "Fill the gap", w[T.box] || 1, c.again);
-  // Before checking, the gender (der Hund) and the meaning are hints you ask for; the kind of article
-  // (the / a / no / my …) is part of the question. Plural has no gender to give away.
+  // Before checking, gender and number (der Hund; Dörfer, plural of das Dorf) and the meaning are
+  // hints you ask for; the kind of article (the / a / no / my …) is part of the question.
+  // Every card offers the same hints, so having one doesn't give anything away.
   const showGender = c.revealed || c.hintGender, showMeaning = c.revealed || c.hintMeaning;
-  const noun = k.plural ? `${esc(pluralOf(w))} (plural)` : showGender ? deHTML(w) : esc(w.de);
+  const noun = !showGender ? esc(k.plural ? pluralOf(w) : w.de)
+             : k.plural ? `${esc(pluralOf(w))} (plural of ${deHTML(w)})` : deHTML(w);
   const info = `${noun} · <b>${esc(akkKindLabel(k))}</b>${showMeaning ? ` · ${esc(w.en)}` : ""}`;
   const hintBtns = c.revealed ? "" : [
-    !k.plural && !c.hintGender && `<button class="btn link" type="button" data-act="hint" data-h="hintGender">Gender</button>`,
+    !c.hintGender && `<button class="btn link" type="button" data-act="hint" data-h="hintGender">Gender &amp; number</button>`,
     !c.hintMeaning && `<button class="btn link" type="button" data-act="hint" data-h="hintMeaning">Meaning</button>`].filter(Boolean);
   let answerBlock = "", controls;
   if (c.revealed) {
