@@ -158,6 +158,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .artbtns.two{grid-template-columns:repeat(2,1fr)}
 .sentence{font-family:var(--f-display);font-weight:700;font-size:clamp(1.5rem,5.5vw,2.3rem);line-height:1.15;overflow-wrap:anywhere}
 .sentence b{color:var(--focus)}
+.sentence .gap{color:var(--muted);letter-spacing:.05em}
 
 /* results */
 .missed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
@@ -425,7 +426,7 @@ const INTERVALS = [0,0,1,3,7,16];           // days until next review, by box
 const BOX_NAMES = ["", "Box 1 · every day", "Box 2 · next day", "Box 3 · 3 days", "Box 4 · 1 week", "Box 5 · 16 days"];
 
 /* ---------- preferences (per browser) ---------- */
-const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab", stats:"vocab", tense:"präsens", cjmode:"all", decl:"indef", dkmode:"all", declCases:null, artfix:"type", mixParts:null };
+const prefs = { dir:"de-en", mode:"flip", size:20, tab:"practice", test:"vocab", stats:"vocab", tense:"präsens", cjmode:"all", decl:"indef", dkmode:"all", declCases:null, artfix:"type", akkmode:"mix", mixParts:null };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("wz-prefs") || "{}")); } catch(e){}
 const savePrefs = () => { try { localStorage.setItem("wz-prefs", JSON.stringify(prefs)); } catch(e){} };
 
@@ -899,6 +900,7 @@ function renderIdle(){
       ${T.tense ? `<div class="opt"><span class="label">Tense</span>${segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l]))}</div>
       <div class="opt"><span class="label">Ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
       ${key === "articles" ? artfixOpt("") : ""}
+      ${key === "akk" ? `<div class="opt"><span class="label">Sentences</span>${segHTML("akkmode", akkMode(), [["mix","With Nominativ"],["akk","Akkusativ only"]])}</div>` : ""}
       ${T.decl ? `<div class="opt"><span class="label">Article</span>${segHTML("decl", T.decl, DECL_KINDS)}</div>${declOpts("")}` : ""}
       ${sizeOpt()}
     </div>
@@ -1089,7 +1091,17 @@ TESTS.keinnicht = {
   chartTitle:"Kein or nicht answers, last 30 days", boxesNote:"A word climbs a box when you pick kein or nicht correctly in a sentence with it and drops back to box 1 when you don’t.",
   trickyTitle:"Trickiest words (kein or nicht)", accLabel:"right, 30 days",
 };
-const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"],["decl","Ein, mein, kein"],["keinnicht","Kein / nicht"]];
+// Akkusativ: type the article that fills the gap in a short sentence.
+TESTS.akk = {
+  box:"akBox", due:"akDue", seen:"akSeen", correct:"akCorrect", wrong:"akWrong", run:"akRun", hc:"akc", hw:"akw",
+  pool: nounWords,
+  one:"noun is", many:"nouns are", inList:"nouns in your list", unit:"nouns",
+  doneText:"sentences right on the first try", allText:"Every sentence right on the first try.",
+  emptyText:TESTS.articles.emptyText,
+  chartTitle:"Akkusativ answers, last 30 days", boxesNote:"A noun climbs a box when you fill its sentence with the right article and drops back to box 1 when you don’t.",
+  trickyTitle:"Trickiest nouns (Akkusativ)", accLabel:"right, 30 days",
+};
+const TEST_OPTIONS = [["vocab","Vocabulary"],["articles","Der, die, das"],["plural","Plural"],["verbs","Verbs"],["decl","Ein, mein, kein"],["keinnicht","Kein / nicht"],["akk","Akkusativ"]];
 const tenseKey = () => TENSES.some(t => t[0] === prefs.tense) ? prefs.tense : "präsens";
 const testKey = name => name === "verbs" ? "verbs_" + tenseKey() : name === "decl" ? declKind() : TESTS[name] ? name : "vocab";
 const testGroup = key => key.startsWith("verbs_") ? "verbs" : TESTS[key] && TESTS[key].decl ? "decl" : key;
@@ -1102,7 +1114,7 @@ const PRACTICE_OPTIONS = TEST_OPTIONS.concat([["mixed","Mixed"]]);
    so "der Hund" in one card can't give away "der, die oder das: Hund" in the next. */
 const MIX_PARTS = [["vocab","Vocabulary"],["articles","Articles"],["plural","Plurals"],
                    ["verbs_präsens","Präsens"],["verbs_präteritum","Präteritum"],["verbs_perfekt","Perfekt"],
-                   ["indef","Ein, eine"],["poss","Mein, dein"],["neg","Kein, keine"],["keinnicht","Kein / nicht"]];
+                   ["indef","Ein, eine"],["poss","Mein, dein"],["neg","Kein, keine"],["keinnicht","Kein / nicht"],["akk","Akkusativ"]];
 const mixParts = () => {
   const on = Array.isArray(prefs.mixParts) ? prefs.mixParts.filter(k => TESTS[k]) : [];
   return on.length ? on : MIX_PARTS.map(([k]) => k);
@@ -1205,6 +1217,7 @@ function renderCard(){
   const kind = session.cur.test;
   if (kind === "articles") { renderArticleCard(); return; }
   if (kind === "keinnicht") { renderKnCard(); return; }
+  if (kind === "akk") { renderAkkCard(); return; }
   if (kind === "plural") { renderPluralCard(); return; }
   if (kind.startsWith("verbs_")) { renderVerbCard(); return; }
   if (TESTS[kind].decl) { renderDeclCard(); return; }
@@ -1389,6 +1402,97 @@ function pickKn(k){
   renderKnCard();
   // Like the article test: a right answer moves on by itself, except in mixed rounds.
   if (c.ok && session.test !== "mixed") setTimeout(() => { if (session && session.cur === c) answer(true); }, 900);
+}
+
+/* ---------- Akkusativ: fill the gap ----------
+   A short sentence from one of your nouns with the article left out: "Ich sehe ___ Hund."
+   The card says which article (the / a / no / my …); you type it in the right case. With
+   "With Nominativ", some sentences need the Nominativ instead, so the case is yours to pick.
+   Only masculine changes in the Akkusativ (der → den, ein → einen); the rule says so. */
+const akkMode = () => prefs.akkmode === "akk" ? "akk" : "mix";
+const DEF_FORMS = { m:["der", "den"], f:["die", "die"], n:["das", "das"], pl:["die", "die"] };
+// [sentence, what decides the case, why, articles that would sound odd in it]; "_" is the gap,
+// "N" the noun. ("für keinen", "ohne keinen" and "Wo ist ein / kein …?" are grammatical but odd.)
+const AKK_SENTENCES = [["Ich sehe _ N.", "sehen", "what you see", []], ["Ich suche _ N.", "suchen", "what you look for", []],
+                       ["Ich brauche _ N.", "brauchen", "what you need", []], ["Ich habe _ N.", "haben", "what you have", []],
+                       ["Das ist für _ N.", "für", "", ["kein"]], ["Ich komme ohne _ N.", "ohne", "", ["kein"]]];
+const NOM_SENTENCES = { sg:[["_ N ist hier.", "subject", "", []], ["Wo ist _ N?", "subject", "", ["kein", "indef"]], ["Das ist _ N.", "ist", "", []]],
+                        pl:[["_ N sind hier.", "subject", "", []], ["Wo sind _ N?", "subject", "", ["kein"]], ["Das sind _ N.", "sind", "", []]] };
+const pickOne = a => a[Math.floor(Math.random() * a.length)];
+
+// A new card's sentence: which case, which article, singular or plural.
+function akkCard(w){
+  const plural = !!pluralOf(w) && pluralOf(w) !== w.de && Math.random() < .3;
+  const kinds = ["def", "def", "poss", "kein"].concat(plural ? [] : ["indef", "indef"]);   // there's no plural of "ein"
+  const kind = pickOne(kinds), owner = Math.floor(Math.random() * POSSESSORS.length);
+  const akk = akkMode() === "akk" || Math.random() < .7;
+  const [text, trigger, why] = pickOne((akk ? AKK_SENTENCES : NOM_SENTENCES[plural ? "pl" : "sg"]).filter(x => !x[3].includes(kind)));
+  return { plural, kind, owner, caseIdx: akk ? 1 : 0, text, trigger, why };
+}
+// Every accepted article for the gap, the usual one first.
+function akkAnswers(w, k){
+  const g = k.plural ? "pl" : GENDER_OF[w.article];
+  if (k.kind === "def") return [DEF_FORMS[g][k.caseIdx]];
+  return declForms(k.kind === "poss" ? POSSESSORS[k.owner][1] : k.kind === "kein" ? "kein" : "ein", g, k.caseIdx);
+}
+const akkKindLabel = k => k.kind === "def" ? "the" : k.kind === "indef" ? "a" : k.kind === "kein" ? "no" : POSSESSORS[k.owner][2].replace(", ", " – ");
+const capFirst = s => s[0].toUpperCase() + s.slice(1);
+// The sentence with the gap filled (or shown as a blank), and the noun in place.
+function akkSentence(w, k, gapHTML){
+  const noun = esc(k.plural ? pluralOf(w) : w.de);
+  const atStart = k.text.startsWith("_");
+  return esc(k.text).replace("N", noun).replace("_", atStart && !gapHTML.startsWith("<") ? capFirst(gapHTML) : gapHTML);
+}
+function akkRule(w, k){
+  const g = k.plural ? "pl" : GENDER_OF[w.article], forms = akkAnswers(w, { ...k, caseIdx:0 })[0] + " → " + akkAnswers(w, { ...k, caseIdx:1 })[0];
+  const what = k.why ? `${k.trigger} takes the Akkusativ for ${k.why}` : `${k.trigger} always takes the Akkusativ`;
+  if (!k.caseIdx) return k.trigger === "subject" ? `${k.plural ? pluralOf(w) : w.de} is the subject, so it’s Nominativ.`
+                                                  : `After ${k.trigger} (sein) the noun stays in the Nominativ.`;
+  return g === "m" ? `${what}: masculine ${forms}.` : `${what}, but only masculine changes: ${GENDER_NAMES[g].toLowerCase()} stays ${akkAnswers(w, k)[0]}.`;
+}
+function checkAkk(c, typed){
+  const got = deFold(typed).split(" ")[0];   // typing the noun too is fine
+  const answers = akkAnswers(S.words.get(c.id), c.akk);
+  if (!got) return { ok:false };
+  if (answers.some(a => deFold(a) === got)) return { ok:true };
+  const other = akkAnswers(S.words.get(c.id), { ...c.akk, caseIdx: 1 - c.akk.caseIdx });
+  if (other.some(a => deFold(a) === got)) return { ok:false, msg: c.akk.caseIdx ? "That’s the Nominativ." : "That’s the Akkusativ." };
+  return { ok:false };
+}
+
+function renderAkkCard(){
+  const s = session, c = s.cur, w = S.words.get(c.id), T = TESTS.akk;
+  if (!c.akk) c.akk = akkCard(w);
+  const k = c.akk, answers = akkAnswers(w, k);
+  const h = sessionHeader(s, "Fill the gap", w[T.box] || 1, c.again);
+  const base = k.plural ? `<span class="art art-pl">die</span> ${esc(pluralOf(w))}` : deHTML(w);
+  let answerBlock = "", controls;
+  if (c.revealed) {
+    const shown = k.text.startsWith("_") ? capFirst(answers[0]) : answers[0];
+    answerBlock = `<div class="answer">
+      <span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig!" : "Not quite."}${c.msg ? " " + esc(c.msg) : ""}</span>
+      <span class="sentence">${akkSentence(w, k, `<b>${esc(shown)}</b>`)}</span>
+      ${!c.ok && c.typed ? `<span class="extra">You wrote: ${esc(c.typed)}</span>` : ""}
+      <span class="extra">${esc(akkRule(w, k))}</span>
+    </div>`;
+    controls = `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`;
+  } else {
+    controls = `<div class="typebox">
+        <input id="typed" enterkeyhint="done" placeholder="Type the article" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <div class="row" style="justify-content:center"><button class="btn primary" data-act="check">Check <span class="kbd">Enter</span></button></div>
+      </div>`;
+  }
+  $("#practiceSession").innerHTML = `${h.top}
+    <div class="card">${h.cardTop}
+      <div class="prompt">
+        <span class="sentence">${akkSentence(w, k, `<span class="gap">${"_".repeat(5)}</span>`)}</span>
+        <span class="extra">${base}${k.plural ? " (plural)" : ""} · <b>${esc(akkKindLabel(k))}</b> · ${esc(w.en)}</span>
+      </div>
+      ${answerBlock}
+    </div>
+    ${controls}`;
+  const t = $("#typed"); if (t) t.focus();
+  else { const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true }); }
 }
 
 /* ---------- plural test ---------- */
@@ -1675,7 +1779,7 @@ function checkAnswer(w, dir, input){
 function checkTyped(){
   if (isGridTest(session.cur.test)) { checkGridCard(); return; }
   const c = session.cur, w = S.words.get(c.id), typed = $("#typed").value;
-  const r = c.test === "plural" ? checkPlural(w, typed) : checkAnswer(w, c.dir, typed);
+  const r = c.test === "plural" ? checkPlural(w, typed) : c.test === "akk" ? checkAkk(c, typed) : checkAnswer(w, c.dir, typed);
   c.ok = r.ok; c.msg = r.msg || ""; c.alt = !!r.alt; c.typed = typed.trim(); c.revealed = true; renderCard();
 }
 
@@ -1778,7 +1882,7 @@ document.addEventListener("keydown", e => {
     if (i >= 0 && i < inputs.length - 1) inputs[i + 1].focus(); else checkGridCard();
     return;
   }
-  if (c.test === "plural" || prefs.mode === "type") {
+  if (c.test === "plural" || c.test === "akk" || prefs.mode === "type") {
     if (e.key === "Enter") { e.preventDefault(); if (!c.revealed) { if (inInput) checkTyped(); } else answer(c.ok); }
     return;
   }
