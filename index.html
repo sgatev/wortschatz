@@ -921,7 +921,7 @@ function renderIdle(){
       <div class="opt"><span class="label">Answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
       ${T.tense ? `<div class="opt"><span class="label">Tense</span>${segHTML("tense", T.tense, TENSES.map(([k, l]) => [k, l]))}</div>
       <div class="opt"><span class="label">Ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
-      ${key === "articles" ? artfixOpt("") : ""}
+      ${key === "articles" || key === "plural" ? artfixOpt("") : ""}
       ${key === "akk" ? `<div class="opt"><span class="label">Sentences</span>${segHTML("akkmode", akkMode(), [["mix","With Nominativ"],["akk","Akkusativ only"]])}</div>` : ""}
       ${T.decl ? `<div class="opt"><span class="label">Article</span>${segHTML("decl", T.decl, DECL_KINDS)}</div>${declOpts("")}` : ""}
       ${recentOpt()}
@@ -976,7 +976,7 @@ function renderMixedIdle(el){
     const pressed = on.includes(k), n = dueEach[k] || 0;
     return `<button type="button" data-mix="${k}" aria-pressed="${pressed}">${label}<span class="n">${n}</span></button>`;
   }).join("");
-  const anyVerbs = on.some(k => k.startsWith("verbs_")), anyVocab = on.includes("vocab"), anyDecl = on.some(k => TESTS[k].decl), anyArticles = on.includes("articles");
+  const anyVerbs = on.some(k => k.startsWith("verbs_")), anyVocab = on.includes("vocab"), anyDecl = on.some(k => TESTS[k].decl), anyArticles = on.includes("articles"), anyPlural = on.includes("plural");
   el.innerHTML = `<div class="panel">
     ${testPicker("mixed")}
     <div class="due"><span class="big num">${nDue}</span><span>${nDue === 1 ? "word has" : "words have"} something due <span class="muted">· across ${on.length} test${on.length === 1 ? "" : "s"}</span></span></div>
@@ -986,7 +986,7 @@ function renderMixedIdle(el){
       ${anyVocab ? `<div class="opt"><span class="label">Vocabulary direction</span>${segHTML("dir", prefs.dir, [["de-en","DE → EN"],["en-de","EN → DE"],["mix","Mixed"]])}</div>
       <div class="opt"><span class="label">Vocabulary answer by</span>${segHTML("mode", prefs.mode, [["flip","Flipping"],["type","Typing"]])}</div>` : ""}
       ${anyVerbs ? `<div class="opt"><span class="label">Verbs: ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
-      ${anyArticles ? artfixOpt("Articles: ") : ""}
+      ${anyArticles || anyPlural ? artfixOpt(anyArticles && anyPlural ? "Articles, plurals: " : anyArticles ? "Articles: " : "Plurals: ") : ""}
       ${anyDecl ? declOpts("Ein, mein, kein: ") : ""}
       ${recentOpt()}
       ${sizeOpt()}
@@ -1331,7 +1331,7 @@ function genderTip(w){
 }
 
 const fullNoun = w => w.article + " " + w.de;
-// After a miss: type the noun with its article to move on ("type", the default), or just continue.
+// After a miss in Der, die, das and Plurals: type the right answer to move on ("type", the default), or just continue.
 const typeFix = () => prefs.artfix !== "next";
 const artfixOpt = pre => `<div class="opt"><span class="label">${pre}after a miss</span>${segHTML("artfix", typeFix() ? "type" : "next", [["type","Type it out"],["next","Just continue"]])}</div>`;
 
@@ -1382,11 +1382,12 @@ function renderArticleCard(){
 
 function checkFix(){
   const c = session && session.cur;
-  if (!c || c.test !== "articles" || !c.revealed || c.ok || !typeFix()) return;
+  if (!c || !["articles", "plural"].includes(c.test) || !c.revealed || c.ok || !typeFix()) return;
   const w = S.words.get(c.id), typed = ($("#fix") || {}).value || "";
-  if (deFold(typed) === deFold(fullNoun(w))) { answer(false); return; }
+  const right = c.test === "plural" ? checkPlural(w, typed).ok : deFold(typed) === deFold(fullNoun(w));
+  if (right) { answer(false); return; }
   c.fixTyped = typed; c.fixWrong = true;
-  renderArticleCard();
+  if (c.test === "plural") renderPluralCard(); else renderArticleCard();
 }
 
 function pickArticle(a){
@@ -1605,7 +1606,16 @@ function renderPluralCard(){
       ${!c.ok && c.typed ? `<span class="extra">You wrote: ${esc(c.typed)}</span>` : ""}
       ${pat ? `<span class="extra">Pattern: <b class="num">${esc(pat)}</b>${PATTERN_NAMES[pat] ? ` (${PATTERN_NAMES[pat]})` : ""}</span>` : `<span class="extra">Irregular plural</span>`}
     </div>`;
-    controls = `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : `<button class="btn link" data-act="override">I was right</button>`}</div>`;
+    // After a miss, typing the plural is what moves on, as in Der, die, das.
+    const plural = pluralOf(w), override = `<button class="btn link" data-act="override">I was right</button>`;
+    controls = c.ok || !typeFix()
+      ? `<div class="row" style="justify-content:center"><button class="btn primary" data-act="next" id="nextBtn">Next <span class="kbd">Enter</span></button>${c.ok ? "" : override}</div>`
+      : `<div class="typebox">
+          <div class="plrow"><span class="art art-pl">die</span><input id="fix" enterkeyhint="done" value="${esc(c.fixTyped || "")}" placeholder="Type “${esc(plural)}”" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+          ${umlautButtons()}
+          <div class="row" style="justify-content:center"><button class="btn primary" data-act="fix">Next <span class="kbd">Enter</span></button>${override}</div>
+          <p class="hint ${c.fixWrong ? "verdict miss" : ""}">${c.fixWrong ? `Not quite. Type “die ${esc(plural)}”.` : "Type the plural to move on."}</p>
+        </div>`;
   } else {
     controls = `<div class="typebox">
         <div class="plrow"><span class="art art-pl">die</span><input id="typed" enterkeyhint="done" placeholder="${esc(w.de)}…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
@@ -1623,7 +1633,9 @@ function renderPluralCard(){
       ${answerBlock}
     </div>
     ${controls}`;
-  const t = $("#typed"); if (t) t.focus();
+  const t = $("#typed"), fix = $("#fix");
+  if (t) t.focus();
+  else if (fix) { fix.addEventListener("input", () => { c.fixTyped = fix.value; }); fix.focus(); fix.setSelectionRange(fix.value.length, fix.value.length); }
   else { const b = $("#nextBtn"); if (b) b.focus({ preventScroll:true }); }
 }
 
@@ -1954,6 +1966,7 @@ document.addEventListener("keydown", e => {
     if (i >= 0 && i < inputs.length - 1) inputs[i + 1].focus(); else checkGridCard();
     return;
   }
+  if (c.test === "plural" && c.revealed && !c.ok && typeFix()) { if (e.key === "Enter") { e.preventDefault(); checkFix(); } return; }
   if (c.test === "plural" || c.test === "akk" || prefs.mode === "type") {
     if (e.key === "Enter") { e.preventDefault(); if (!c.revealed) { if (inInput) checkTyped(); } else answer(c.ok); }
     return;
