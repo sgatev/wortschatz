@@ -140,6 +140,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .cjrow label{font-family:var(--f-mono);font-size:.85rem;color:var(--muted);text-align:right}
 .cjrow input{width:100%;min-width:0;padding:8px 12px;font-size:1.05rem;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
 .cjrow input:disabled{opacity:1;color:var(--ink)}
+.cjrow input.art-der{color:var(--der)} .cjrow input.art-die{color:var(--die)} .cjrow input.art-das{color:var(--das)} .cjrow input.art-pl{color:var(--ink)}
 .cjrow.ok input{border-color:var(--ok);box-shadow:inset 3px 0 0 var(--ok)}
 .cjrow.miss input{border-color:var(--miss);box-shadow:inset 3px 0 0 var(--miss);text-decoration:line-through;text-decoration-color:var(--miss)}
 .cjfix{grid-column:2;font-weight:600;color:var(--ok);font-size:.95rem}
@@ -170,6 +171,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .artbtns.two{grid-template-columns:repeat(2,1fr)}
 .sentence{font-family:var(--f-display);font-weight:700;font-size:clamp(1.5rem,5.5vw,2.3rem);line-height:1.15;overflow-wrap:anywhere}
 .sentence b{color:var(--focus)}
+.sentence b.art{font-weight:inherit} .sentence b.art-der{color:var(--der)} .sentence b.art-die{color:var(--die)} .sentence b.art-das{color:var(--das)} .sentence b.art-pl{color:var(--ink)}
 .sentence .gap{color:var(--muted);letter-spacing:.05em}
 .hints{justify-content:center;gap:4px}
 .hints .label{margin-right:4px}
@@ -1407,7 +1409,8 @@ function renderKnCard(){
   let answerBlock = "", after = "";
   if (c.revealed) {
     // The sentences are built from the word, so they're escaped except for the <b> around the answer.
-    const negHTML = esc(neg).replace(/&lt;(\/?)b&gt;/g, "<$1b>");
+    const g = right === "kein" ? (/^Das sind/.test(neg) ? "pl" : GENDER_OF[w.article]) : null;
+    const negHTML = esc(neg).replace(/&lt;(\/?)b&gt;/g, (_, end) => end ? "</b>" : g ? `<b class="${GENDER_CLASS[g]}">` : "<b>");
     answerBlock = `<div class="answer">
       <span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig!" : `It’s ${right}, not ${esc(c.picked)}.`}</span>
       <span class="sentence">${negHTML}</span>
@@ -1517,7 +1520,7 @@ function renderAkkCard(){
     const shown = k.text.startsWith("_") ? capFirst(answers[0]) : answers[0];
     answerBlock = `<div class="answer">
       <span class="verdict ${c.ok ? "ok" : "miss"}">${c.ok ? "Richtig!" : "Not quite."}${c.msg ? " " + esc(c.msg) : ""}</span>
-      <span class="sentence">${akkSentence(w, k, `<b>${esc(shown)}</b>`)}</span>
+      <span class="sentence">${akkSentence(w, k, `<b class="${GENDER_CLASS[k.plural ? "pl" : GENDER_OF[w.article]]}">${esc(shown)}</b>`)}</span>
       ${!c.ok && c.typed ? `<span class="extra">You wrote: ${esc(c.typed)}</span>` : ""}
       <span class="extra">${esc(akkRule(w, k))}</span>
     </div>`;
@@ -1691,6 +1694,8 @@ function checkVerbCard(){
 const CASES = ["Nominativ", "Akkusativ", "Dativ", "Genitiv"];
 const DECL_ENDINGS = { m:["", "en", "em", "es"], f:["e", "e", "er", "er"], n:["", "", "em", "es"], pl:["e", "e", "en", "er"] };
 const GENDER_OF = { der:"m", die:"f", das:"n" };
+// The colours of the Der, die, das exercise, for answers shown after checking. Plural has none.
+const GENDER_CLASS = { m:"art art-der", f:"art art-die", n:"art art-das", pl:"art art-pl" };
 const GENDER_NAMES = { m:"Masculine", f:"Feminine", n:"Neuter", pl:"Plural" };
 // [person, possessive article, English]
 const POSSESSORS = [["ich","mein","my"], ["du","dein","your"], ["er","sein","his"], ["sie","ihr","her"], ["es","sein","its"],
@@ -1738,10 +1743,10 @@ function renderDeclCard(){
   const h = sessionHeader(s, `${T.label} · fill in the ${c.cases.length === 1 ? "case" : "cases"}`, w[T.box] || 1, c.again);
   const rows = c.cases.map(i => {
     const state = !c.revealed ? "" : c.rows[i] ? "ok" : "miss";
-    const fix = c.revealed && !c.rows[i] ? `<span class="cjfix">${esc(table[i][0])}</span>` : "";
+    const fix = c.revealed && !c.rows[i] ? `<span class="cjfix ${GENDER_CLASS[g]}">${esc(table[i][0])}</span>` : "";
     return `<div class="cjrow ${state}">
       <label for="cj${i}">${CASES[i]}</label>
-      <input id="cj${i}" class="cjin" enterkeyhint="next" value="${esc(c.typedAll[i])}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" ${c.revealed ? "disabled" : ""}>
+      <input id="cj${i}" class="cjin ${state === "ok" ? GENDER_CLASS[g] : ""}" enterkeyhint="next" value="${esc(c.typedAll[i])}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" ${c.revealed ? "disabled" : ""}>
       ${fix}</div>`;
   }).join("");
   const nWrong = c.revealed ? c.cases.filter(i => !c.rows[i]).length : 0;
