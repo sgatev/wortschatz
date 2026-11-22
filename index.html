@@ -199,6 +199,7 @@ details[open] summary{margin-bottom:10px}
 .result .rde{font-weight:600;font-size:1.1rem;overflow-wrap:anywhere}
 .result .ren{color:var(--muted);font-size:.92rem;overflow-wrap:anywhere}
 .result .pos{font-family:var(--f-mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-left:6px}
+.result .have{font-size:.82rem;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
 .result .gloss{font-size:.82rem;color:var(--muted);font-style:italic;margin-top:2px;overflow-wrap:anywhere}
 .results .more{align-self:flex-start;margin:6px 8px}
 .result .ract{display:flex;gap:6px}
@@ -847,15 +848,19 @@ function splitArticle(s){
 function deHTML(w){
   return (w.article ? `<span class="art art-${w.article}">${w.article}</span> ` : "") + esc(w.de);
 }
-// Same word and article is a duplicate; when a meaning is given it must match too,
-// so both "die Bank (bench)" and "die Bank (bank)" can be in the list.
-function exists(article, de, skipId, en){
+// Same word and article is a duplicate; when a meaning is given it must share at least one
+// meaning too ("tomato" and "tomato, love apple" overlap), so both "die Bank (bench)" and
+// "die Bank (bank)" can be in the list.
+function sameWords(article, de, skipId){
   const k = (article + " " + de).toLowerCase();
-  for (const w of S.words.values()) {
-    if (w.id === skipId || (w.article + " " + w.de).toLowerCase() !== k) continue;
-    if (en === undefined || norm(w.en) === norm(en)) return true;
-  }
-  return false;
+  return [...S.words.values()].filter(w => w.id !== skipId && (w.article + " " + w.de).toLowerCase() === k);
+}
+function enParts(s){
+  return String(s || "").split(/[,;\/]/).map(p => norm(p).replace(/^(to|the|a|an) /, "")).filter(Boolean);
+}
+function exists(article, de, skipId, en){
+  const want = en === undefined ? null : enParts(en);
+  return sameWords(article, de, skipId).some(w => !want || enParts(w.en).some(p => want.includes(p)));
 }
 const dueWords = () => [...S.words.values()].filter(w => (w.due || "") <= today());
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -2009,11 +2014,13 @@ function renderResults(){
   const SHOWN = 4, all = qState.results, visible = qState.expanded ? all : all.slice(0, SHOWN);
   box.innerHTML = visible.map((r, i) => {
     const dup = exists(r.article, r.de, null, r.en);
+    const have = dup ? [] : sameWords(r.article, r.de);   // in the list, but with a different meaning
     return `<div class="result ${i === 0 ? "first" : ""}">
       <div style="min-width:0">
         <div class="rde">${deHTML(r)}${r.plural ? ` <span class="pl">· ${esc(r.plural)}</span>` : ""}<span class="pos">${esc(catLabel(r.category) || POS[r.pos] || r.pos)}</span></div>
         <div class="ren">${r.en ? esc(r.en) : "<i>No English on Wiktionary. Use “Edit first” to add the meaning.</i>"}</div>
         ${r.gloss ? `<div class="gloss" lang="de">${esc(r.gloss)}</div>` : ""}
+        ${have.length ? `<div class="have">Already in your list as ${have.map(w => `“${esc(w.en)}”`).join(", ")}</div>` : ""}
       </div>
       <div class="ract">
         <button class="btn small" type="button" data-q="edit" data-i="${i}">Edit first</button>
