@@ -906,15 +906,15 @@ function renderIdle(){
   const key = currentTest();
   if (key === "mixed") { renderMixedIdle(el); return; }
   const T = TESTS[key];
-  const pool = T.pool(), due = pool.filter(w => isDue(w, T)).length;
+  const all = T.pool(), pool = all.filter(isRecent), due = pool.filter(w => isDue(w, T)).length, days = recentDays();
   const fetching = T.tense ? [...S.words.values()].filter(w => w.category === "verb" && !w.forms).length : 0;
   const fetchNote = fetching ? `<p class="muted" style="font-size:.9rem">Getting the forms of ${fetching} more verb${fetching === 1 ? "" : "s"} from Wiktionary…</p>` : "";
   let body;
-  if (!pool.length) {
+  if (!all.length) {
     body = fetching ? fetchNote : `<p class="muted" style="max-width:60ch">${T.emptyText}</p>
       <div class="row"><button class="btn" data-act="goWords">Add words</button></div>`;
   } else {
-    body = `<div class="due"><span class="big num">${due}</span><span>${due === 1 ? T.one : T.many} due today <span class="muted">· ${pool.length} ${T.inList}</span></span></div>
+    body = `<div class="due"><span class="big num">${due}</span><span>${due === 1 ? T.one : T.many} due today <span class="muted">· ${pool.length} ${T.inList}${days ? `, added in the last ${days} days` : ""}</span></span></div>
     <div class="opts">
       ${key === "vocab" ? `
       <div class="opt"><span class="label">Direction</span>${segHTML("dir", prefs.dir, [["de-en","DE → EN"],["en-de","EN → DE"],["mix","Mixed"]])}</div>
@@ -924,10 +924,12 @@ function renderIdle(){
       ${key === "articles" ? artfixOpt("") : ""}
       ${key === "akk" ? `<div class="opt"><span class="label">Sentences</span>${segHTML("akkmode", akkMode(), [["mix","With Nominativ"],["akk","Akkusativ only"]])}</div>` : ""}
       ${T.decl ? `<div class="opt"><span class="label">Article</span>${segHTML("decl", T.decl, DECL_KINDS)}</div>${declOpts("")}` : ""}
+      ${recentOpt()}
       ${sizeOpt()}
     </div>
     <div class="row">
       ${due ? `<button class="btn primary" data-act="start">Start practice</button>`
+            : !pool.length ? `<span class="muted">You haven’t added any of these in the last ${days} days. Choose All under Words to practise the rest.</span>`
             : `<button class="btn primary" data-act="extra">Practice anyway</button><span class="muted" style="font-size:.9rem">Nothing is due. Extra rounds still count toward your stats.</span>`}
     </div>${mixupsHTML(key)}${fetchNote}`;
   }
@@ -941,7 +943,7 @@ function renderIdle(){
    them right MIXUP_RUN times in a row in that test. Most-missed first, as many as a round holds.
    In Mixed: the mix-ups of the included tests, one card per word (its most-missed test). */
 const MIXUP_MISSES = 2, MIXUP_RUN = 3;
-const mixupWords = T => T.pool().filter(w => (w[T.wrong] || 0) >= MIXUP_MISSES && (w[T.run] || 0) < MIXUP_RUN);
+const mixupWords = T => practicePool(T).filter(w => (w[T.wrong] || 0) >= MIXUP_MISSES && (w[T.run] || 0) < MIXUP_RUN);
 function mixupCards(key){
   const best = new Map();   // word id -> its most-missed card
   for (const k of key === "mixed" ? mixParts() : [key]) {
@@ -950,6 +952,7 @@ function mixupCards(key){
   }
   return [...best.values()].sort((a, b) => b.wrong - a.wrong).slice(0, prefs.size > 0 ? prefs.size : undefined).map(({ id, test }) => ({ id, test }));
 }
+const recentOpt = () => `<div class="opt"><span class="label">Words</span>${segHTML("recent", recentDays() || "all", [["all","All"],[7,"Added in the last 7 days"],[30,"Last 30 days"]])}</div>`;
 const sizeOpt = () => `<div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"],[-1,"∞"]])}
       ${prefs.size === -1 ? `<span class="hint" style="text-align:left">Keeps going until you press End round.</span>` : ""}</div>`;
 function mixupsHTML(key){
@@ -985,11 +988,13 @@ function renderMixedIdle(el){
       ${anyVerbs ? `<div class="opt"><span class="label">Verbs: ask for</span>${segHTML("cjmode", cjMode(), [["all","All six forms"],["one","One form"]])}</div>` : ""}
       ${anyArticles ? artfixOpt("Articles: ") : ""}
       ${anyDecl ? declOpts("Ein, mein, kein: ") : ""}
+      ${recentOpt()}
       ${sizeOpt()}
     </div>
     <div class="row">
       ${nDue ? `<button class="btn primary" data-act="start">Start practice</button>`
              : all.byWord.size ? `<button class="btn primary" data-act="extra">Practice anyway</button><span class="muted" style="font-size:.9rem">Nothing is due in these tests. Extra rounds still count toward your stats.</span>`
+             : recentDays() ? `<span class="muted">You haven’t added any words for these tests in the last ${recentDays()} days. Choose All under Words to practise the rest.</span>`
              : `<span class="muted">None of your words can be practised in the selected tests yet.</span>`}
     </div>${mixupsHTML("mixed")}</div>`;
 }
@@ -1138,7 +1143,7 @@ function testPicker(current){
   const due = g => {
     if (g === "mixed") return mixCandidates(false).byWord.size;
     const T = TESTS[testKey(g)];
-    return T.pool().filter(w => isDue(w, T)).length;
+    return practicePool(T).filter(w => isDue(w, T)).length;
   };
   return `<div class="opt"><span class="label">Test</span><div class="picker" role="group" aria-label="Test">${
     PRACTICE_GROUPS.map(([name, groups]) => `<div class="pgroup"><span class="pname">${name}</span>${
@@ -1163,7 +1168,7 @@ function mixCandidates(extra, parts = mixParts()){
   const byWord = new Map(), counts = {};
   for (const key of parts) {
     const T = TESTS[key];
-    for (const w of T.pool()) {
+    for (const w of practicePool(T)) {
       if (!extra && !isDue(w, T)) continue;
       counts[key] = (counts[key] || 0) + 1;
       if (!byWord.has(w.id)) byWord.set(w.id, []);
@@ -1174,6 +1179,15 @@ function mixCandidates(extra, parts = mixParts()){
 }
 const boxIn = (w, T) => w[T.box] || 1;
 const isDue = (w, T) => (w[T.due] || "") <= today();
+// The "Words" option: practise every word, or only the ones added in the last 7 or 30 days.
+const recentDays = () => ({ "7":7, "30":30 })[prefs.recent] || 0;
+const addedAt = w => Date.parse((w && w.created) || "") || 0;   // words without a date count as old
+function isRecent(w){
+  const d = recentDays();
+  return !d || addedAt(w) >= Date.now() - d * 864e5;
+}
+const practicePool = T => T.pool().filter(isRecent);
+const newestFirst = (a, b) => addedAt(S.words.get(b.id)) - addedAt(S.words.get(a.id));
 
 function roundCards(key, extra){
   if (key === "mixed") {
@@ -1182,7 +1196,8 @@ function roundCards(key, extra){
     return [...byWord].map(([id, tests]) => ({ id, test: tests[Math.floor(Math.random() * tests.length)] }));
   }
   const T = TESTS[key];
-  return (extra ? T.pool() : T.pool().filter(w => isDue(w, T))).map(w => ({ id: w.id, test: key }));
+  const pool = practicePool(T);
+  return (extra ? pool : pool.filter(w => isDue(w, T))).map(w => ({ id: w.id, test: key }));
 }
 const cardBox = c => boxIn(S.words.get(c.id), TESTS[c.test]);
 
@@ -1192,8 +1207,11 @@ function startSession(extra, only, refill){
   const key = currentTest();
   const endless = prefs.size === -1 && (!only || !!refill);
   let cards = only ? only.filter(c => S.words.has(c.id) && TESTS[c.test]) : roundCards(key, extra);
-  cards = shuffle(cards).sort((a, b) => cardBox(a) - cardBox(b));
+  // Lowest boxes first and, within a box, the newest words, so a round cut short keeps those.
+  // Then shuffled again within each box, so the cards don't come in the order they were added.
+  cards = shuffle(cards).sort((a, b) => cardBox(a) - cardBox(b) || newestFirst(a, b));
   if (!only && prefs.size) cards = cards.slice(0, endless ? STREAM_BATCH : prefs.size);
+  cards = shuffle(cards).sort((a, b) => cardBox(a) - cardBox(b));
   if (!cards.length) return;
   session = { test:key, queue: cards.map(c => ({ ...c, again:false })), total:cards.length, done:0, knew:0, missed:[], cur:null, finished:false,
               refill: endless ? refill || (() => [roundCards(key, false), roundCards(key, true)]) : null, shown:new Map(), recent:[] };
@@ -1210,8 +1228,9 @@ function topUp(s){
   const groups = s.refill(), queued = new Set(s.queue.map(c => c.id)), recent = new Set(s.recent);
   const times = c => s.shown.get(c.id) || 0;
   const add = cards => {
-    const order = shuffle(cards).sort((a, b) => times(a) - times(b) || cardBox(a) - cardBox(b)).slice(0, STREAM_BATCH);
-    for (const c of order) { s.queue.push({ ...c, again:false }); queued.add(c.id); }
+    const rank = (a, b) => times(a) - times(b) || cardBox(a) - cardBox(b);
+    const order = shuffle(cards).sort((a, b) => rank(a, b) || newestFirst(a, b)).slice(0, STREAM_BATCH);
+    for (const c of shuffle(order).sort(rank)) { s.queue.push({ ...c, again:false }); queued.add(c.id); }
   };
   for (const group of groups) {
     if (s.queue.length >= STREAM_LOW) break;
