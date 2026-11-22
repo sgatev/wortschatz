@@ -952,7 +952,7 @@ function mixupCards(key){
   }
   return [...best.values()].sort((a, b) => b.wrong - a.wrong).slice(0, prefs.size > 0 ? prefs.size : undefined).map(({ id, test }) => ({ id, test }));
 }
-const recentOpt = () => `<div class="opt"><span class="label">Words</span>${segHTML("recent", recentDays() || "all", [["all","All"],[7,"Added in the last 7 days"],[30,"Last 30 days"]])}</div>`;
+const recentOpt = () => `<div class="opt"><span class="label">Words</span>${segHTML("recent", recentDays() || "all", [["all","All"],[7,"Last 7 days"],[14,"Last 14 days"]])}</div>`;
 const sizeOpt = () => `<div class="opt"><span class="label">Cards per round</span>${segHTML("size", prefs.size, [[10,"10"],[20,"20"],[40,"40"],[0,"All"],[-1,"∞"]])}
       ${prefs.size === -1 ? `<span class="hint" style="text-align:left">Keeps going until you press End round.</span>` : ""}</div>`;
 function mixupsHTML(key){
@@ -1179,8 +1179,8 @@ function mixCandidates(extra, parts = mixParts()){
 }
 const boxIn = (w, T) => w[T.box] || 1;
 const isDue = (w, T) => (w[T.due] || "") <= today();
-// The "Words" option: practise every word, or only the ones added in the last 7 or 30 days.
-const recentDays = () => ({ "7":7, "30":30 })[prefs.recent] || 0;
+// The "Words" option: practise every word, or only the ones added in the last 7 or 14 days.
+const recentDays = () => ({ "7":7, "14":14 })[prefs.recent] || 0;
 const addedAt = w => Date.parse((w && w.created) || "") || 0;   // words without a date count as old
 function isRecent(w){
   const d = recentDays();
